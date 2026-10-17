@@ -1,0 +1,13 @@
+{
+  "name": "pyramid-billiards",
+  "version": "1.0.0",
+  "description": "Пирамида — школа русского бильярда и игра в «американку» против компьютера или вдвоём (PWA + Android)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "python3 -m http.server 8080",
+    "android": "bash android/build.sh"
+  },
+  "license": "MIT"
+}
