@@ -9,6 +9,10 @@
  *    multi-player «малая русская пирамида» (ru-billiards.ucoz.ru).
  * Ball values are agreed before the game, the last ball often counts double and
  * a foul costs the offender a ball's value. Both schemes add up to zero.
+ *
+ * «Хапуга» is a house bet some tables add: before the shot the player names a
+ * ball they are sure to pot. Potted — it counts double; not potted — the player
+ * loses the agreed points, and a foul on that shot costs a double fine.
  */
 
 export const SETTLE = { ring: 'ring', all: 'all' };
@@ -65,6 +69,8 @@ export const DEFAULTS = {
   foul: 1, // points a foul costs the offender
   settle: SETTLE.ring,
   extras: [], // balls with their own price: [{ name, value }]
+  hapuga: false, // «хапуга» bets allowed
+  hapugaMiss: 2, // points a «хапуга» that did not come off costs
 };
 
 /**
@@ -120,16 +126,25 @@ export class KolkhozSession {
     return this.lastBallNext && this.settings.lastDouble ? v * 2 : v;
   }
 
-  pot(player, k = 0) {
+  /** A ball potted; `hapuga` — the player had named it, so it counts double. */
+  pot(player, k = 0, hapuga = false) {
     if (this.roundComplete || player < 0 || player >= this.n) return false;
     const last = this.lastBallNext;
-    this.log.push({ type: 'ball', player, kind: k, value: this.valueOf(k), last });
+    this.log.push({ type: 'ball', player, kind: k, value: this.valueOf(k) * (hapuga ? 2 : 1), last, hapuga });
     return true;
   }
 
-  foul(player) {
+  /** A foul; on a «хапуга» shot the fine is doubled. */
+  foul(player, hapuga = false) {
     if (player < 0 || player >= this.n) return false;
-    this.log.push({ type: 'foul', player, value: -this.settings.foul });
+    this.log.push({ type: 'foul', player, value: -this.settings.foul * (hapuga ? 2 : 1), hapuga });
+    return true;
+  }
+
+  /** The named ball did not go in: the player pays for the «хапуга». */
+  hapugaMissed(player) {
+    if (!this.settings.hapuga || player < 0 || player >= this.n) return false;
+    this.log.push({ type: 'hapuga', player, value: -this.settings.hapugaMiss });
     return true;
   }
 

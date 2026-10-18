@@ -55,7 +55,7 @@ function newGame(level, { variant = store.setting('variant', VARIANT.free), pena
   const players = kolkhoz ? kolkhozPlayers(kolkhoz, level) : level
     ? [{ name: 'Ты', you: true }, { name: 'Компьютер', ai: level.id }]
     : [{ name: 'Игрок 1' }, { name: 'Игрок 2' }];
-  const match = new Match({ players, variant, penalty, breaker, kolkhoz: kolkhoz ? {} : null });
+  const match = new Match({ players, variant, penalty, breaker, kolkhoz: kolkhoz ? { hapuga: Boolean(kolkhoz.hapuga) } : null });
   return { match, level: kolkhoz && kolkhoz.humans >= kolkhoz.size ? null : level?.id ?? null, breaker, kolkhoz, tally: freshTally() };
 }
 
@@ -210,6 +210,7 @@ function kolkhozSetupView(start) {
   let level = LEVELS[store.setting('level', 'amateur')] ?? LEVELS.amateur;
   let size = store.setting('kolkhozPlayers', 3);
   let humans = Math.min(size, store.setting('kolkhozHumans', 1));
+  let hapuga = store.setting('kolkhozHapuga', false);
 
   const who = h('p.muted.small');
   const humansBox = h('div');
@@ -262,6 +263,13 @@ function kolkhozSetupView(start) {
       who),
     computerCard,
     h('div.card',
+      label('Хапуга'),
+      segmented([{ id: 'no', title: 'Без хапуги' }, { id: 'yes', title: 'С хапугой' }], hapuga ? 'yes' : 'no', (id) => {
+        hapuga = id === 'yes';
+        store.setSetting('kolkhozHapuga', hapuga);
+      }),
+      h('p.muted.small', 'Клубная ставка: перед ударом объяви шар, который точно забьёшь (кнопка «Хапуга», потом касание шара). Забил его — шар вдвойне. Не забил — минус 2 очка, фол — штраф вдвойне. Компьютер объявляет хапугу, только когда уверен в ударе.')),
+    h('div.card',
       label('Правила коротко'),
       h('ul.rules-list', [
         'Порядок ударов постоянный; в следующей партии разбивает следующий игрок.',
@@ -271,7 +279,7 @@ function kolkhozSetupView(start) {
         'Итог — твои очки минус очки следующего игрока: твои шары оплачивает тот, кто бьёт перед тобой.',
       ].map((r) => h('li', r))),
       h('a.btn.secondary.wide', { href: `#/lesson/${LESSONS.findIndex((l) => l.title.startsWith('Колхоз'))}` }, 'Урок о колхозе')),
-    h('button.btn.primary.wide', { onclick: () => start(newGame(level, { variant, kolkhoz: { size, humans } })) }, 'Начать колхоз'),
+    h('button.btn.primary.wide', { onclick: () => start(newGame(level, { variant, kolkhoz: { size, humans, hapuga } })) }, 'Начать колхоз'),
     h('a.btn.secondary.wide', { href: '#/kolkhoz' }, 'Счёт для настоящего стола'));
 }
 
@@ -289,6 +297,11 @@ function matchView(scope, game, { exit, rematch }) {
   const status = h('h3.status');
   const detail = h('p.status-detail');
   const hintBtn = h('button.btn.secondary.small', { 'aria-label': 'Подсказка тренера' }, icon('bulb'), 'Совет');
+  // колхоз: name a ball as «хапуга» before the shot
+  const hapugaBtn = match.kolkhoz?.hapuga ? h('button.btn.secondary.small.hapuga-btn', { 'aria-label': 'Объявить хапугу' }, 'Хапуга') : null;
+  let declaring = false;
+  // the dock has room for one more button only if the coach's button shows just its bulb
+  if (hapugaBtn) hintBtn.lastChild.remove();
   const scoreboard = h('div.scoreboard');
   const overlay = h('div.game-over.hidden');
   const decision = h('div.game-over.decision.hidden');
@@ -300,7 +313,8 @@ function matchView(scope, game, { exit, rematch }) {
     onShotDone: shotDone,
     onSelectBall: selectBall,
     onPick: pick,
-    canPick: (i) => match.canTake(i),
+    canPick: (i) => (declaring ? match.canDeclare(i) : match.canTake(i)),
+    marked: () => match.hapugaSlot,
     canPlace: (x, y) => match.ballInHand && !isComputer() && match.canPlaceStriker(x, y),
     handZone: () => {
       if (!match.ballInHand || isComputer() || match.pending) return null;
@@ -364,6 +378,8 @@ function matchView(scope, game, { exit, rematch }) {
     controls.locked = isComputer();
     table.locked = isComputer();
     hintBtn.disabled = isComputer();
+    declaring = false;
+    showHapuga();
     if (isComputer()) {
       setStatus(`${name} думает…`, match.message);
       ai = { it: planShot(match, level), plan: null, t: 0 };
@@ -393,6 +409,11 @@ function matchView(scope, game, { exit, rematch }) {
 
   function shoot() {
     if (table.busy || isComputer() || match.over) return;
+    if (declaring) {
+      // the cue was struck while choosing: no ball named, no bet
+      declaring = false;
+      table.pickMode = false;
+    }
     miscueShot = false;
     if (table.shoot({ fire: (...a) => match.shoot(...a) })) {
       miscueShot = table.miscue;
@@ -404,6 +425,34 @@ function matchView(scope, game, { exit, rematch }) {
   function lock(v) {
     controls.locked = v;
     hintBtn.disabled = v;
+    if (hapugaBtn) hapugaBtn.disabled = v;
+  }
+
+  // ---- колхоз, «хапуга»: tap the button, then the ball you are sure to pot
+
+  function showHapuga() {
+    if (!hapugaBtn) return;
+    hapugaBtn.disabled = isComputer() || match.isBreak || Boolean(match.pending) || match.over;
+    hapugaBtn.classList.toggle('on', match.hapuga >= 0 || declaring);
+    hapugaBtn.textContent = match.hapuga >= 0 ? `Хапуга: ${match.hapuga || 'цв.'}` : 'Хапуга';
+  }
+
+  function toggleHapuga() {
+    if (table.busy || isComputer() || match.isBreak || match.pending) return;
+    if (match.hapuga >= 0 || declaring) {
+      // a second tap takes the bet back
+      match.hapuga = -1;
+      declaring = false;
+      table.pickMode = false;
+      table.invalidate();
+      showHapuga();
+      return describeSettings();
+    }
+    declaring = true;
+    table.pickMode = true;
+    showHapuga();
+    const miss = match.kolkhoz.hapugaMiss;
+    setStatus('Хапуга', `Коснись шара, который точно забьёшь этим ударом: забьёшь — он вдвойне, нет — минус ${miss}, фол — штраф вдвойне.`);
   }
 
   function shotDone() {
@@ -485,6 +534,16 @@ function matchView(scope, game, { exit, rematch }) {
 
   /** A tap on a ball while picking: the penalty ball, or (сибирка) the ball taken for a свояк. */
   function pick(i) {
+    if (declaring) {
+      if (!match.declareHapuga(i)) return;
+      buzz(20);
+      declaring = false;
+      table.pickMode = false;
+      table.invalidate();
+      showHapuga();
+      setStatus(`Хапуга: шар ${match.hapuga || 'без номера'}`, 'Шар обведён красным. Забьёшь его этим ударом — он вдвойне. Нажми «Хапуга» ещё раз, чтобы передумать.', 'ok');
+      return;
+    }
     const p = match.pending;
     if (!p || isComputer(p.taker)) return;
     const taken = p.kind === 'svoyak' ? match.takeForSvoyak(i) : p.kind === 'penalty' && match.takePenalty(i);
@@ -535,8 +594,9 @@ function matchView(scope, game, { exit, rematch }) {
         ai.from = table.aim;
         applyPlan(ai.plan);
         const t = technique(ai.plan.ox, ai.plan.oy, ai.plan.elev);
+        const named = ai.plan.hapuga >= 0 && match.declareHapuga(match.labels.indexOf(ai.plan.hapuga));
         setStatus(`${match.current.name}: шар ${match.strikerLabel || 'без номера'}`,
-          `${cap(ai.plan.kind)} — ${t.name.toLowerCase()}, сила ${Math.round(ai.plan.power * 100)}%.`);
+          `${named ? `Хапуга на шар ${ai.plan.hapuga || 'без номера'}! ` : ''}${cap(ai.plan.kind)} — ${t.name.toLowerCase()}, сила ${Math.round(ai.plan.power * 100)}%.`);
         break;
       }
       return;
@@ -608,6 +668,7 @@ function matchView(scope, game, { exit, rematch }) {
   }
 
   hintBtn.addEventListener('click', hint);
+  hapugaBtn?.addEventListener('click', toggleHapuga);
 
   const view = playLayout({
     className: '.game',
@@ -621,6 +682,7 @@ function matchView(scope, game, { exit, rematch }) {
       h('button.btn.secondary.small.square', { 'aria-label': 'Прицел левее', onclick: () => table.nudgeAim(-0.001) }, '◀'),
       h('button.btn.secondary.small.square', { 'aria-label': 'Прицел правее', onclick: () => table.nudgeAim(0.001) }, '▶'),
       hintBtn,
+      hapugaBtn,
     ],
   });
 

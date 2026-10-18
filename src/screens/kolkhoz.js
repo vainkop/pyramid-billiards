@@ -18,6 +18,7 @@ const ROUNDS = ['партия', 'партии', 'партий'];
 export function kolkhozScreen(scope) {
   const root = h('section.page.kolkhoz');
   let session = loadSession();
+  let armed = -1; // «хапуга»: the player who named a ball for the next shot
   const save = () => store.saveKolkhoz(session ? session.toJSON() : null);
   const render = () => root.replaceChildren(...(session ? sheetView() : setupView()));
 
@@ -70,6 +71,8 @@ export function kolkhozScreen(scope) {
     const field = (text, input, note) => h('label.k-field', h('span', text, note ? h('small', note) : null), input);
 
     const settleNote = h('p.muted.small', SETTLE_NOTES[settings.settle]);
+    const hapugaMiss = field('Хапуга сорвалась — минус очков', number('hapugaMiss', { min: 0 }));
+    hapugaMiss.classList.toggle('hidden', !settings.hapuga);
     const extrasBox = h('div.k-extras');
     const showExtras = () => extrasBox.replaceChildren(...settings.extras.map((e, i) => h('div.k-player-row',
       h('input.k-input', { value: e.name, maxlength: 14, 'aria-label': 'Название шара', oninput: (ev) => { e.name = ev.target.value; keep(); } }),
@@ -117,6 +120,13 @@ export function kolkhozScreen(scope) {
           settings.lastDouble = id === 'yes';
           keep();
         }),
+        h('div.k-field', h('span', 'Хапуга', h('small', 'объявил шар: забил — вдвойне, нет — минус очки'))),
+        segmented([{ id: 'no', title: 'Без хапуги' }, { id: 'yes', title: 'С хапугой' }], settings.hapuga ? 'yes' : 'no', (id) => {
+          settings.hapuga = id === 'yes';
+          hapugaMiss.classList.toggle('hidden', !settings.hapuga);
+          keep();
+        }),
+        hapugaMiss,
         h('div.k-field', h('span', 'Расчёт')),
         segmented(Object.values(SETTLE).map((id) => ({ id, title: SETTLE_NAMES[id] })), settings.settle, (id) => {
           settings.settle = id;
@@ -151,6 +161,7 @@ export function kolkhozScreen(scope) {
     const round = s.rounds.length + 1;
     const act = (fn) => () => {
       if (fn() === false) return;
+      armed = -1;
       buzz();
       save();
       render();
@@ -167,7 +178,8 @@ export function kolkhozScreen(scope) {
 
     const rows = s.players.map((name, i) => {
       const next = s.players[(i + 1) % s.n];
-      return h(`div.card.k-row${i === s.breaker ? '.breaker' : ''}`,
+      const bet = st.hapuga && armed === i;
+      return h(`div.card.k-row${i === s.breaker ? '.breaker' : ''}${bet ? '.armed' : ''}`,
         h('div.k-row-top',
           h('div.grow',
             h('h3', name),
@@ -178,14 +190,24 @@ export function kolkhozScreen(scope) {
           h('span', 'Всего: ', h(`b.${tone(totals[i])}`, signedRub(totals[i] * st.price)))),
         h('div.k-actions',
           s.kinds.map((k, kind) => h(`button.btn.${kind ? 'secondary' : 'primary'}.k-pot`, {
-            type: 'button', disabled: s.roundComplete, onclick: act(() => s.pot(i, kind)),
-          }, kind ? `${k.name} +${s.valueOf(kind)}` : `Шар +${s.valueOf(0)}`)),
-          h('button.btn.secondary.k-foul', { type: 'button', onclick: act(() => s.foul(i)) }, `Фол −${st.foul}`)));
+            type: 'button', disabled: s.roundComplete, onclick: act(() => s.pot(i, kind, bet)),
+          }, `${kind ? k.name : 'Шар'} +${s.valueOf(kind) * (bet ? 2 : 1)}`)),
+          h('button.btn.secondary.k-foul', { type: 'button', onclick: act(() => s.foul(i, bet)) }, `Фол −${st.foul * (bet ? 2 : 1)}`),
+          st.hapuga ? h(`button.btn.secondary.k-hapuga${bet ? '.on' : ''}`, {
+            type: 'button',
+            'aria-pressed': bet,
+            onclick: () => {
+              armed = bet ? -1 : i;
+              render();
+            },
+          }, bet ? 'Хапуга ✓' : 'Хапуга') : null,
+          bet ? h('button.btn.secondary.k-foul', { type: 'button', onclick: act(() => s.hapugaMissed(i)) }, `Мимо −${st.hapugaMiss}`) : null),
+        bet ? h('p.small.muted', 'Хапуга объявлена: забил названный шар — он вдвойне, не забил — «Мимо», фол — штраф вдвойне.') : null);
     });
 
     const last = s.log.at(-1);
     const undo = h('button.btn.secondary', { type: 'button', disabled: !last, onclick: act(() => Boolean(s.undo())) },
-      last ? `Отменить: ${s.players[last.player]} ${last.type === 'foul' ? 'фол' : `+${last.value}`}` : 'Отменить');
+      last ? `Отменить: ${s.players[last.player]} ${last.type === 'foul' ? 'фол' : last.type === 'hapuga' ? 'хапуга мимо' : `+${last.value}`}` : 'Отменить');
     const close = h(`button.btn.${s.roundComplete ? 'primary' : 'secondary'}`, {
       type: 'button', disabled: !s.log.length,
       onclick: confirmTwice(s.roundComplete ? null : 'Шары ещё есть. Закрыть?', act(() => Boolean(s.endRound()))),

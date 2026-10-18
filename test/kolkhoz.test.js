@@ -216,3 +216,81 @@ test('колхоз: computers with колхоз tactics play a whole round to th
   assert.equal(sum(m.nets), 0);
   assert.ok(kinds.has('отыгрыш'), 'a risky pot is sometimes passed up for a safety against the next player');
 });
+
+// ---------------------------------------------------------------- «хапуга»
+
+test('хапуга on the score sheet: named ball double, a miss costs the bet, a foul twice', () => {
+  const s = new KolkhozSession({ players: ['А', 'Б', 'В'], balls: 3, hapuga: true, hapugaMiss: 2 });
+  s.pot(0, 0, true);
+  s.hapugaMissed(1);
+  s.foul(2, true);
+  assert.deepEqual(s.roundPoints(), [2, -2, -2]);
+  assert.equal(s.remaining, 2, 'a missed хапуга is no ball');
+  s.pot(0);
+  s.pot(1, 0, true); // the last ball, doubled for being last and again for the хапуга
+  assert.deepEqual(s.roundPoints(), [3, 2, -2]);
+  assert.equal(new KolkhozSession({ players: ['А', 'Б', 'В'] }).hapugaMissed(0), false, 'only when agreed');
+});
+
+function hapugaTable(extra = {}) {
+  return position([[0, W / 2, H * 0.8], [1, W / 2, H * 0.3], [2, 0.2, 0.4], [3, 0.5, 0.6]], { kolkhoz: { hapuga: true }, ...extra });
+}
+
+test('хапуга on the table: a named ball potted counts double', () => {
+  const m = hapugaTable();
+  assert.ok(m.declareHapuga(1));
+  assert.equal(m.hapugaSlot, 1);
+  finish(m, { firstHit: 1, potted: [1] });
+  assert.deepEqual(m.scores, [2, 0, 0]);
+  assert.equal(m.hapuga, -1, 'the bet is for one shot');
+  assert.match(m.message, /Хапуга! Шар 1 — вдвойне/);
+});
+
+test('хапуга on the table: another ball potted or a miss costs the bet, a foul twice', () => {
+  const m = hapugaTable();
+  m.declareHapuga(1);
+  finish(m, { firstHit: 2, potted: [2] });
+  assert.deepEqual(m.scores, [1 - 2, 0, 0], 'the other ball counts, the bet is lost');
+  assert.equal(m.cur, 0, 'a ball went in: the player goes on');
+  m.declareHapuga(1);
+  finish(m, { firstHit: 1 });
+  assert.deepEqual(m.scores, [-3, 0, 0]);
+  assert.equal(m.cur, 1);
+  m.declareHapuga(3);
+  finish(m, { firstHit: -1 });
+  assert.deepEqual(m.scores, [-3, -2, 0], 'foul on a хапуга: double fine');
+  assert.match(m.message, /штраф вдвойне/);
+});
+
+test('хапуга: only when agreed, never on the break, never the coloured ball in сибирка; naming again takes it back', () => {
+  assert.equal(position(spread(4)).declareHapuga(1), false);
+  const fresh = new Match({ players: three, kolkhoz: { hapuga: true } });
+  assert.equal(fresh.declareHapuga(1), false, 'break');
+  const sib = hapugaTable({ variant: VARIANT.combined });
+  assert.equal(sib.declareHapuga(0), false);
+  assert.ok(sib.declareHapuga(2));
+  assert.ok(sib.declareHapuga(2));
+  assert.equal(sib.hapuga, -1);
+  const saved = hapugaTable();
+  saved.declareHapuga(3);
+  assert.equal(Match.fromJSON(JSON.parse(JSON.stringify(saved))).hapuga, 3);
+});
+
+test('хапуга on the last ball: double for the хапуга, double again for the last ball', () => {
+  const m = position([[0, W / 2, H * 0.8], [1, W / 2, H * 0.3]], { variant: VARIANT.combined, kolkhoz: { hapuga: true } });
+  m.declareHapuga(1);
+  finish(m, { firstHit: 1, potted: [1] });
+  assert.ok(m.over);
+  assert.deepEqual(m.scores, [4, 0, 0]);
+});
+
+test('the computer names a хапуга only for a sure pot', () => {
+  // ball 1 a hand's width from the top-left pocket: short for the master, too risky for the amateur's aim
+  const at = (sx, sy, hapuga = true) => position([[0, sx, sy], [1, 0.12, 0.12]], { kolkhoz: { hapuga } });
+  const short = planShotNow(at(0.4, 0.3), LEVELS.master, { random: seeded(5) });
+  assert.equal(short.kind, 'чужой');
+  assert.equal(short.hapuga, 1);
+  assert.equal(planShotNow(at(0.4, 0.3), LEVELS.amateur, { random: seeded(5) }).hapuga, -1, 'amateur: not sure enough');
+  assert.equal(planShotNow(at(0.35, 0.9), LEVELS.master, { random: seeded(5) }).hapuga, -1, 'a long shot is no sure thing');
+  assert.equal(planShotNow(at(0.4, 0.3, false), LEVELS.master, { random: seeded(5) }).hapuga, -1, 'not agreed: no хапуга');
+});

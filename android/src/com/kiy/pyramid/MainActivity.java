@@ -168,13 +168,14 @@ public class MainActivity extends Activity {
                 + " log.push('сибирка after break: ' + document.querySelector('.status')?.textContent + ' | ' + document.querySelector('.status-detail')?.textContent);"
                 // колхоз on the table: three players, the computers play in turn
                 + " localStorage.removeItem('pyramid:game'); localStorage.setItem('pyramid:setting:variant', JSON.stringify('free'));"
+                + " localStorage.setItem('pyramid:setting:kolkhozHapuga', 'true');"
                 + " location.hash = '#/lessons'; await sleep(300); location.hash = '#/game/kolkhoz'; await sleep(500);"
                 + " log.push('колхоз setup: ' + document.querySelector('h1')?.textContent + ' | ' + document.querySelector('.page p.muted.small')?.textContent);"
                 + " [...document.querySelectorAll('button')].find(b => b.textContent.includes('Начать колхоз'))?.click(); await sleep(500);"
                 + " document.querySelector('.cue-strip')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await sleep(6000);"
                 + " log.push('колхоз: ' + document.querySelectorAll('.scoreboard .player').length + ' игрока | ' + [...document.querySelectorAll('.scoreboard .player')].map(e => e.textContent).join(' / ') + ' | ' + document.querySelector('.status')?.textContent + ' | ' + document.querySelector('.status-detail')?.textContent);"
                 + " await sleep(15000);"
-                + " log.push('колхоз later: ' + [...document.querySelectorAll('.scoreboard .player')].map(e => e.textContent).join(' / ') + ' | ' + document.querySelector('.status')?.textContent);"
+                + " log.push('колхоз later: ' + [...document.querySelectorAll('.scoreboard .player')].map(e => e.textContent).join(' / ') + ' | ' + document.querySelector('.status')?.textContent + ' | хапуга button: ' + (document.querySelector('.hapuga-btn')?.textContent ?? 'NONE') + ' | dock fits: ' + (document.querySelector('.dock-actions').scrollWidth <= document.querySelector('.dock-actions').clientWidth + 1));"
                 // the score sheet for a real table: a full round of 15 balls, round robin
                 + " localStorage.removeItem('pyramid:game'); localStorage.removeItem('pyramid:kolkhoz'); localStorage.removeItem('pyramid:kolkhoz:setup');"
                 + " location.hash = '#/kolkhoz'; await sleep(600);"

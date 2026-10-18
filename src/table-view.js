@@ -36,13 +36,15 @@ export class TableView {
    * @param options.canPick   GAME: which balls may be picked in pick mode
    * @param options.handZone  GAME: () => [y0, y1] band where the struck ball may be placed from hand, or null
    */
-  constructor(canvas, { mode, onShotDone, onSelectBall, onPick, canPick, canPlace, handZone, labels = null }) {
+  constructor(canvas, { mode, onShotDone, onSelectBall, onPick, canPick, canPlace, handZone, marked, labels = null }) {
     this.mode = mode;
     this.onShotDone = onShotDone;
     this.onSelectBall = onSelectBall;
     /** GAME: while `pickMode` is on, a tap on any ball calls onPick (taking the penalty ball). */
     this.onPick = onPick;
     this.canPick = canPick ?? (() => true);
+    /** GAME: the table slot to ring in red — the ball named as «хапуга» in колхоз — or -1. */
+    this.marked = marked ?? (() => -1);
     this.handZone = handZone;
     this.pickMode = false;
     this.canPlace = canPlace;
@@ -442,6 +444,16 @@ export class TableView {
       ctx.beginPath();
       ctx.arc(x, y, r * 1.5, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    if (this.mode === GAME && i === this.marked()) {
+      // колхоз: the ball named as «хапуга»
+      ctx.strokeStyle = 'rgba(224,104,84,.95)';
+      ctx.lineWidth = Math.max(2, r * 0.16);
+      ctx.setLineDash([r * 0.45, r * 0.3]);
+      ctx.beginPath();
+      ctx.arc(x, y, r * 1.75, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     const d = this.drill;
     if (d && !this.animating && this.mode !== DEMO && (i === 1 || (d.type === MASSE && i === 2))) {

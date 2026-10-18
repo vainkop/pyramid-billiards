@@ -1,6 +1,6 @@
 // Offline support: the app shell is cached on install and served cache-first.
 // Bump VERSION whenever any of these files change so clients pick up the update.
-const VERSION = 'v12';
+const VERSION = 'v13';
 const CACHE = `pyramid-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',

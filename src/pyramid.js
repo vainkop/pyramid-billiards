@@ -13,7 +13,9 @@ import { nets, signed, pointsWord, SETTLE } from './kolkhoz.js';
  * Either game can also be played as «колхоз» (see kolkhoz.js): three or more
  * players in a fixed order, no target — the round goes on until the balls run
  * out, a foul costs the offender points instead of the penalty ball, and the
- * last ball may count double.
+ * last ball may count double. With «хапуга» on, a player may name a ball before
+ * the shot: potted — it counts double; not potted — minus `hapugaMiss`; a foul
+ * on that shot costs double.
  *
  * Physics always strikes table slot 0, so choosing another ball swaps it into
  * slot 0; `labels[i]` keeps the number painted on the ball in slot i (0 = the
@@ -36,7 +38,7 @@ export const VARIANT = { free: 'free', combined: 'combined' };
 export const VARIANT_NAMES = { free: 'Американка', combined: 'Сибирка' };
 
 /** Колхоз on the table: the last ball counts double, a foul costs one point, the money goes round the ring. */
-export const KOLKHOZ_DEFAULTS = { lastDouble: true, foul: 1, settle: SETTLE.ring };
+export const KOLKHOZ_DEFAULTS = { lastDouble: true, foul: 1, settle: SETTLE.ring, hapuga: false, hapugaMiss: 2 };
 
 /** Penalty variants: the official rule, or the club custom many players know. */
 export const PENALTY = {
@@ -57,6 +59,8 @@ export class Match {
     this.scores = this.players.map(() => 0);
     this.pocketed = this.players.map(() => []); // labels on each player's shelf, in order
     this.lastBall = -1; // колхоз: who scored the last ball of the round
+    this.hapuga = -1; // колхоз: the label of the ball named as «хапуга» for the next shot
+    this.hapugaHit = false; // the shot just played potted its «хапуга»
     this.cur = breaker;
     this.isBreak = true;
     this.ballInHand = true;
@@ -107,6 +111,24 @@ export class Match {
       if (this.labels[i] !== 0) objects++;
     }
     return this.combined ? objects : Math.max(0, on - 1);
+  }
+
+  /** Колхоз, «хапуга»: may table slot i be named for the next shot? (In сибирка not the cue ball.) */
+  canDeclare(i) {
+    return Boolean(this.kolkhoz?.hapuga) && !this.isBreak && !this.pending && !this.over
+      && i >= 0 && i < BALLS && this.table.on[i] && !(this.combined && this.labels[i] === 0);
+  }
+
+  /** Names table slot i as «хапуга» for the next shot; naming it again takes the bet back. */
+  declareHapuga(i) {
+    if (!this.canDeclare(i)) return false;
+    this.hapuga = this.hapuga === this.labels[i] ? -1 : this.labels[i];
+    return true;
+  }
+
+  /** Table slot of the named ball, or -1. */
+  get hapugaSlot() {
+    return this.hapuga < 0 ? -1 : this.labels.indexOf(this.hapuga);
   }
 
   /** Колхоз: each player's result for the round so far (adds up to zero). */
@@ -248,10 +270,26 @@ export class Match {
     const labels = pottedSlots.map((i) => this.labels[i]);
     const svoyak = pottedSlots.includes(0);
     const tech = technique(spin.ox, spin.oy, spin.elev).name;
+    const hapuga = this.hapuga;
+    this.hapuga = -1;
+    this.hapugaHit = hapuga >= 0 && !foul && labels.includes(hapuga);
     this.isBreak = false;
     this.lastShot = {
       player: me, foul, pocketed: foul ? [] : labels, svoyak: svoyak && !foul, technique: tech, jumped: t.jumped.length,
+      hapuga: hapuga >= 0 ? { label: hapuga, hit: this.hapugaHit } : null,
     };
+    // «хапуга»: the named ball counts double, or the bet is paid; a foul is fined twice below
+    let bet = '';
+    if (hapuga >= 0 && !foul) {
+      const name = hapuga ? `шар ${hapuga}` : 'шар без номера';
+      if (this.hapugaHit) {
+        this.scores[me] += 1;
+        bet = `Хапуга! ${cap(name)} — вдвойне. `;
+      } else {
+        this.scores[me] -= this.kolkhoz.hapugaMiss;
+        bet = `Хапуга сорвалась (${name}): −${this.kolkhoz.hapugaMiss}. `;
+      }
+    }
 
     if (foul) {
       // balls pocketed on a foul don't count; they and any that flew off go back (п.21.4, п.23.4);
@@ -259,7 +297,7 @@ export class Match {
       const out = [...pottedSlots, ...t.jumped];
       this.respot(this.combined ? out.filter((i) => i !== 0) : out);
       this.ensureStriker();
-      this.foulPenalty(me, foul, isBreak);
+      this.foulPenalty(me, foul, isBreak, hapuga >= 0);
       return;
     }
 
@@ -271,17 +309,17 @@ export class Match {
         this.score(me, objects);
         if (this.over) return;
         this.pending = { kind: 'svoyak', taker: me };
-        this.message = `${cap(kinds)}! ${say(this.players[me], 'снимает', 'сними')} со стола любой прицельный шар взамен битка (+1) — и с руки из дома.`;
+        this.message = `${bet}${cap(kinds)}! ${say(this.players[me], 'снимает', 'сними')} со стола любой прицельный шар взамен битка (+1) — и с руки из дома.`;
         return;
       }
       this.score(me, labels);
       if (this.over) return;
-      this.message = `${cap(kinds)}: +${labels.length}. ${say(this.players[me], 'бьёт', 'бьёшь')} ещё.`;
+      this.message = `${bet}${cap(kinds)}: +${labels.length}. ${say(this.players[me], 'бьёт', 'бьёшь')} ещё.`;
       this.ensureStriker();
       return;
     }
     this.cur = opp;
-    this.message = this.players[opp].you ? 'Мимо. Твой ход.' : `Мимо. Ход: ${this.players[opp].name}.`;
+    this.message = `${bet}${this.players[opp].you ? 'Мимо. Твой ход.' : `Мимо. Ход: ${this.players[opp].name}.`}`;
   }
 
   score(player, labels) {
@@ -303,7 +341,8 @@ export class Match {
   /** Колхоз: the balls are gone — the last one may count double; the best result is the winner. */
   endRound(player) {
     this.lastBall = player;
-    if (this.kolkhoz.lastDouble) this.scores[player] += 1;
+    // the last ball counts double; if it was the «хапуга» too, the doubled ball doubles again
+    if (this.kolkhoz.lastDouble) this.scores[player] += this.hapugaHit ? 2 : 1;
     const n = this.nets;
     this.winner = n.indexOf(Math.max(...n));
     this.pending = null;
@@ -311,11 +350,11 @@ export class Match {
     this.message = `Шары кончились.${last} Лучший итог: ${this.players[this.winner].name} (${signed(n[this.winner])}).`;
   }
 
-  foulPenalty(offender, foul, breakFoul) {
-    const head = `Фол: ${foul}.`;
+  foulPenalty(offender, foul, breakFoul, hapuga = false) {
+    const head = `Фол: ${foul}.${hapuga ? ' Хапуга — штраф вдвойне.' : ''}`;
     if (this.kolkhoz) {
       // колхоз: the offender pays the agreed price, the turn goes on round the table
-      const cost = this.kolkhoz.foul;
+      const cost = this.kolkhoz.foul * (hapuga ? 2 : 1);
       this.scores[offender] -= cost;
       this.cur = this.next(offender);
       const player = this.players[this.cur];
@@ -419,7 +458,7 @@ export class Match {
   toJSON() {
     const t = this.table;
     return {
-      players: this.players, variant: this.variant, penalty: this.penalty, kolkhoz: this.kolkhoz, lastBall: this.lastBall,
+      players: this.players, variant: this.variant, penalty: this.penalty, kolkhoz: this.kolkhoz, lastBall: this.lastBall, hapuga: this.hapuga,
       scores: this.scores, pocketed: this.pocketed, cur: this.cur,
       isBreak: this.isBreak, ballInHand: this.ballInHand, winner: this.winner, message: this.message,
       pending: this.pending, labels: [...this.labels], x: [...t.x], y: [...t.y], on: t.on,
@@ -429,7 +468,7 @@ export class Match {
   static fromJSON(o) {
     const m = new Match({ players: o.players, variant: o.variant ?? VARIANT.free, penalty: o.penalty ?? PENALTY.official, kolkhoz: o.kolkhoz });
     Object.assign(m, {
-      scores: o.scores, pocketed: o.pocketed, cur: o.cur, isBreak: o.isBreak, ballInHand: o.ballInHand, lastBall: o.lastBall ?? -1,
+      scores: o.scores, pocketed: o.pocketed, cur: o.cur, isBreak: o.isBreak, ballInHand: o.ballInHand, lastBall: o.lastBall ?? -1, hapuga: o.hapuga ?? -1,
       winner: o.winner, message: o.message, pending: o.pending ?? null,
     });
     m.labels = Int8Array.from(o.labels);

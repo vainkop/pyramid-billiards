@@ -97,6 +97,7 @@ export function* planShot(match, level = LEVELS.amateur, { random = Math.random,
   }
   // only when no candidate pots a ball (played exactly) does the computer fall back to a safety
   if (!best) best = { ...safety(board, strikers, ctx), ...PLAIN[0] };
+  const hapuga = match.kolkhoz?.hapuga && level.spin ? sureOfIt(board, best, ctx, level) : -1;
 
   return {
     striker: best.striker,
@@ -107,7 +108,29 @@ export function* planShot(match, level = LEVELS.amateur, { random = Math.random,
     oy: best.oy,
     elev: 0,
     kind: best.kind,
+    hapuga: hapuga >= 0 ? match.labels[hapuga] : -1, // колхоз: table slot named as «хапуга» → its label
   };
+}
+
+/**
+ * Колхоз, «хапуга»: a named ball pays one extra point but a miss costs the bet
+ * (two by default), so it is only worth naming when the pot is close to sure —
+ * the object ball drops when played as planned and with the level's aim error
+ * one and a half times either way. Returns the object ball's slot, or -1.
+ */
+function sureOfIt(t, plan, ctx, level) {
+  if (plan.kind !== 'чужой' || plan.obj == null) return -1;
+  // withStriker swaps the striker into slot 0: follow the object ball if it sat there
+  const obj = plan.obj === 0 ? plan.striker : plan.obj;
+  const spread = Math.max(level.error, 0.004) * 1.5;
+  for (const d of [0, -spread, spread]) {
+    const sim = withStriker(t, plan.striker);
+    const startY = Float64Array.from(sim.y);
+    sim.shoot(plan.aim + d, plan.power, plan.ox, plan.oy, 0);
+    sim.runToRest(20);
+    if (shotFoul(sim, { fromHandZone: ctx.fromHandZone, startY }) || !sim.potted.includes(obj)) return -1;
+  }
+  return plan.obj;
 }
 
 /**
