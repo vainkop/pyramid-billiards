@@ -2,6 +2,7 @@ import { lessonsScreen, lessonScreen } from './screens/lessons.js';
 import { practiceScreen, playScreen, drillScreen } from './screens/practice.js';
 import { gameScreen } from './screens/game.js';
 import { quizScreen } from './screens/quiz.js';
+import { kolkhozScreen } from './screens/kolkhoz.js';
 import { Scope, icon } from './ui.js';
 import { h } from './dom.js';
 
@@ -12,6 +13,7 @@ const TABS = [
   { route: 'lessons', label: 'Уроки', icon: 'lessons' },
   { route: 'practice', label: 'Практика', icon: 'drills' },
   { route: 'game', label: 'Игра', icon: 'game' },
+  { route: 'kolkhoz', label: 'Колхоз', icon: 'kolkhoz' },
   { route: 'quiz', label: 'Тест', icon: 'quiz' },
 ];
 
@@ -23,6 +25,7 @@ const ROUTES = {
   trainer: [(s) => playScreen(s, null), 'practice'],
   drill: [drillScreen, 'practice'],
   game: [gameScreen, 'game'],
+  kolkhoz: [kolkhozScreen, 'kolkhoz'],
   quiz: [(s) => quizScreen(s, render), 'quiz'],
 };
 

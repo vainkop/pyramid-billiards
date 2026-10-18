@@ -1,5 +1,6 @@
 import { Physics, W, H, R } from './physics.js';
 import { technique } from './content.js';
+import { nets, signed, pointsWord, SETTLE } from './kolkhoz.js';
 
 /**
  * Two games of the pyramid after the official rules («Пирамида. Официальные
@@ -8,6 +9,11 @@ import { technique } from './content.js';
  *  - «Комбинированная пирамида» («сибирка», «московская»): only the coloured
  *    ball is struck; after a свояк it comes back from hand from the house («КП п.N»).
  * Plain «п.N» refers to the general rules of the pyramid.
+ *
+ * Either game can also be played as «колхоз» (see kolkhoz.js): three or more
+ * players in a fixed order, no target — the round goes on until the balls run
+ * out, a foul costs the offender points instead of the penalty ball, and the
+ * last ball may count double.
  *
  * Physics always strikes table slot 0, so choosing another ball swaps it into
  * slot 0; `labels[i]` keeps the number painted on the ball in slot i (0 = the
@@ -29,6 +35,9 @@ export const TEMP_HOUSE_LINE = FOOT_SPOT.y;
 export const VARIANT = { free: 'free', combined: 'combined' };
 export const VARIANT_NAMES = { free: 'Американка', combined: 'Сибирка' };
 
+/** Колхоз on the table: the last ball counts double, a foul costs one point, the money goes round the ring. */
+export const KOLKHOZ_DEFAULTS = { lastDouble: true, foul: 1, settle: SETTLE.ring };
+
 /** Penalty variants: the official rule, or the club custom many players know. */
 export const PENALTY = {
   official: 'official', // the opponent takes any ball off the table (СП п.6)
@@ -36,15 +45,18 @@ export const PENALTY = {
 };
 
 export class Match {
-  constructor({ players, variant = VARIANT.free, penalty = PENALTY.official, breaker = 0, random = Math.random } = {}) {
+  constructor({ players, variant = VARIANT.free, penalty = PENALTY.official, breaker = 0, kolkhoz = null, random = Math.random } = {}) {
     this.players = players ?? [{ name: 'Игрок 1' }, { name: 'Игрок 2' }];
     this.variant = variant;
     this.penalty = penalty;
+    /** «Колхоз» settings { lastDouble, foul, settle }, or null for a game of two. */
+    this.kolkhoz = kolkhoz && { ...KOLKHOZ_DEFAULTS, ...kolkhoz };
     this.random = random;
     this.table = new Physics(BALLS);
     this.labels = Int8Array.from({ length: BALLS }, (_, i) => i);
-    this.scores = [0, 0];
-    this.pocketed = [[], []]; // labels on each player's shelf, in order
+    this.scores = this.players.map(() => 0);
+    this.pocketed = this.players.map(() => []); // labels on each player's shelf, in order
+    this.lastBall = -1; // колхоз: who scored the last ball of the round
     this.cur = breaker;
     this.isBreak = true;
     this.ballInHand = true;
@@ -73,7 +85,33 @@ export class Match {
   }
 
   get name() {
-    return VARIANT_NAMES[this.variant];
+    return this.kolkhoz ? `Колхоз · ${VARIANT_NAMES[this.variant].toLowerCase()}` : VARIANT_NAMES[this.variant];
+  }
+
+  /** Who strikes after player p: the order goes round the table. */
+  next(p) {
+    return (p + 1) % this.players.length;
+  }
+
+  /**
+   * Колхоз: balls that can still be scored. In сибирка every object ball; in the
+   * free pyramid all but one — a lone ball has nothing to be struck at.
+   */
+  get ballsLeft() {
+    const t = this.table;
+    let on = 0;
+    let objects = 0;
+    for (let i = 0; i < BALLS; i++) {
+      if (!t.on[i]) continue;
+      on++;
+      if (this.labels[i] !== 0) objects++;
+    }
+    return this.combined ? objects : Math.max(0, on - 1);
+  }
+
+  /** Колхоз: each player's result for the round so far (adds up to zero). */
+  get nets() {
+    return nets(this.scores, this.kolkhoz?.settle);
   }
 
   /** Сибирка, from hand, with every object ball in the house: play from the temporary house (КП п.6.6). */
@@ -204,7 +242,7 @@ export class Match {
     const t = this.table;
     const { isBreak, spin, fromHandZone, startY } = this.shotContext;
     const me = this.cur;
-    const opp = 1 - me;
+    const opp = this.next(me);
     const foul = shotFoul(t, { isBreak, fromHandZone, startY });
     const pottedSlots = [...t.potted];
     const labels = pottedSlots.map((i) => this.labels[i]);
@@ -249,6 +287,10 @@ export class Match {
   score(player, labels) {
     this.scores[player] += labels.length;
     this.pocketed[player].push(...labels);
+    if (this.kolkhoz) {
+      if (this.ballsLeft === 0) this.endRound(player);
+      return;
+    }
     if (this.scores[player] >= TARGET) {
       this.winner = player;
       this.pending = null;
@@ -258,9 +300,33 @@ export class Match {
     }
   }
 
+  /** Колхоз: the balls are gone — the last one may count double; the best result is the winner. */
+  endRound(player) {
+    this.lastBall = player;
+    if (this.kolkhoz.lastDouble) this.scores[player] += 1;
+    const n = this.nets;
+    this.winner = n.indexOf(Math.max(...n));
+    this.pending = null;
+    const last = this.kolkhoz.lastDouble ? ` Последний шар за два — ${this.players[player].you ? 'тебе' : this.players[player].name}.` : '';
+    this.message = `Шары кончились.${last} Лучший итог: ${this.players[this.winner].name} (${signed(n[this.winner])}).`;
+  }
+
   foulPenalty(offender, foul, breakFoul) {
-    const taker = 1 - offender;
     const head = `Фол: ${foul}.`;
+    if (this.kolkhoz) {
+      // колхоз: the offender pays the agreed price, the turn goes on round the table
+      const cost = this.kolkhoz.foul;
+      this.scores[offender] -= cost;
+      this.cur = this.next(offender);
+      const player = this.players[this.cur];
+      this.message = `${head} ${say(this.players[offender], 'теряет', 'теряешь')} ${cost} ${pointsWord(cost)}. ${player.you ? 'Твой ход.' : `Ход: ${player.name}.`}`;
+      if (this.combined && !this.table.on[0]) {
+        this.cueFromHand();
+        this.message += ' Биток — с руки из дома.';
+      }
+      return;
+    }
+    const taker = 1 - offender;
     if (this.penalty === PENALTY.club) {
       // club custom: the offender's last scored ball goes back on the table
       const label = this.pocketed[offender].pop();
@@ -353,16 +419,17 @@ export class Match {
   toJSON() {
     const t = this.table;
     return {
-      players: this.players, variant: this.variant, penalty: this.penalty, scores: this.scores, pocketed: this.pocketed, cur: this.cur,
+      players: this.players, variant: this.variant, penalty: this.penalty, kolkhoz: this.kolkhoz, lastBall: this.lastBall,
+      scores: this.scores, pocketed: this.pocketed, cur: this.cur,
       isBreak: this.isBreak, ballInHand: this.ballInHand, winner: this.winner, message: this.message,
       pending: this.pending, labels: [...this.labels], x: [...t.x], y: [...t.y], on: t.on,
     };
   }
 
   static fromJSON(o) {
-    const m = new Match({ players: o.players, variant: o.variant ?? VARIANT.free, penalty: o.penalty ?? PENALTY.official });
+    const m = new Match({ players: o.players, variant: o.variant ?? VARIANT.free, penalty: o.penalty ?? PENALTY.official, kolkhoz: o.kolkhoz });
     Object.assign(m, {
-      scores: o.scores, pocketed: o.pocketed, cur: o.cur, isBreak: o.isBreak, ballInHand: o.ballInHand,
+      scores: o.scores, pocketed: o.pocketed, cur: o.cur, isBreak: o.isBreak, ballInHand: o.ballInHand, lastBall: o.lastBall ?? -1,
       winner: o.winner, message: o.message, pending: o.pending ?? null,
     });
     m.labels = Int8Array.from(o.labels);

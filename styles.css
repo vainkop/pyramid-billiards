@@ -413,3 +413,67 @@ canvas.table { position: absolute; inset: 0; width: 100%; height: 100%; touch-ac
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
 }
 .status-detail.open::after { content: 'свернуть ▴'; right: 12px; bottom: 6px; background: transparent; }
+
+/* ================= Колхоз: the score sheet and the table for three and more ================= */
+
+.k-players, .k-extras { display: flex; flex-direction: column; gap: 8px; }
+.k-player-row { display: flex; align-items: center; gap: 6px; }
+.k-order {
+  width: 28px; height: 28px; flex: none; display: grid; place-items: center;
+  border: 1px solid var(--gold-dim); border-radius: 50%; font: 700 13px var(--serif); color: var(--gold);
+}
+.k-input {
+  flex: 1; min-width: 0; padding: 10px 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--ivory); font: 16px var(--sans);
+}
+.k-input:focus { outline: none; border-color: var(--gold); }
+.k-num { flex: none; width: 92px; text-align: right; }
+.icon-btn.k-mini { width: 36px; height: 40px; font-size: 13px; color: var(--gold); background: var(--surface-2); }
+.k-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; margin-top: 4px; }
+.k-field span { display: flex; flex-direction: column; }
+.k-field small { color: var(--muted); font-size: 12px; }
+
+.k-round { border-color: rgba(217, 179, 108, 0.45); }
+.k-round-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.k-round h2 { font-size: 20px; margin-top: 6px; }
+.k-left { display: flex; flex-direction: column; align-items: flex-end; }
+.k-left b { font: 700 34px/1 var(--serif); color: var(--gold); }
+.k-left small { color: var(--muted); font-size: 12px; }
+
+.k-row { gap: 10px; padding: 12px 14px; }
+.k-row.breaker { border-color: rgba(217, 179, 108, 0.35); }
+.k-row-top { display: flex; align-items: center; gap: 10px; }
+.k-row-top h3 { font-size: 19px; }
+.k-row-top small { font-size: 12px; }
+.k-pts { display: flex; flex-direction: column; align-items: center; min-width: 54px; }
+.k-pts b { font: 700 30px/1 var(--serif); color: var(--gold); }
+.k-pts small { color: var(--muted); font-size: 11px; }
+.k-row-net { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--muted); }
+.k-row-net b { font-weight: 700; }
+.k-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.k-actions .btn { flex: 1 1 30%; min-height: 48px; padding: 10px 8px; }
+.k-actions .k-foul { color: var(--red); border-color: rgba(208, 97, 79, 0.6); flex: 0 1 auto; }
+.k-bar { position: sticky; bottom: 0; z-index: 2; padding: 8px 0; background: linear-gradient(transparent, var(--bg) 30%); }
+.k-bar .btn { min-height: 48px; font-size: 14px; padding: 10px 10px; }
+.k-danger { color: var(--red); border-color: rgba(208, 97, 79, 0.5); }
+
+.k-table { display: flex; flex-direction: column; width: 100%; font-size: 14px; }
+.k-tr { display: grid; grid-template-columns: minmax(0, 1fr) 64px 96px; gap: 6px; padding: 7px 2px; border-top: 1px solid var(--line); text-align: left; }
+.k-tr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-tr > span + span { text-align: right; font-weight: 700; }
+.k-th { border-top: none; color: var(--muted); font-size: 12px; }
+.k-th > span + span { font-weight: 600; }
+.k-history .k-tr > span + span { text-align: center; font-weight: 600; }
+.k-history small { font-weight: 500; }
+.k-pay { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.k-pay li { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.k-pay li .gold { margin-left: auto; font-weight: 700; }
+.game-over .k-table { margin: 4px 0; }
+
+/* the table's scoreboard with three to five players */
+.scoreboard.many { gap: 5px; }
+.scoreboard.many .player { padding: 4px 6px 5px; border-radius: 12px; }
+.scoreboard.many .player-name { font-size: 12px; }
+.scoreboard.many .player-score b { font-size: 18px; }
+.scoreboard.many .player-score span { font-size: 12px; font-weight: 700; }
+.scoreboard.many .icon-btn { width: 34px; }

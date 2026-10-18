@@ -4,13 +4,17 @@ import { LEVELS, planShot, planShotNow, choosePenaltyBall, chooseSvoyakBall, cho
 import { TableView, GAME } from '../table-view.js';
 import { ShotControls, playLayout } from '../shot-controls.js';
 import { technique, LESSONS } from '../content.js';
+import { signed } from '../kolkhoz.js';
 import { store } from '../store.js';
 import { h } from '../dom.js';
-import { Scope, label, icon, buzz, segmented } from '../ui.js';
+import { Scope, label, icon, buzz, segmented, plural } from '../ui.js';
 
 const AIM_TIME = 0.9; // seconds the computer spends swinging the cue into line
 const DECIDE_TIME = 1100; // ms the computer "thinks" over a penalty ball or who plays next
 const LEVEL_ORDER = [LEVELS.novice, LEVELS.amateur, LEVELS.master];
+/** Колхоз against the computer: the regulars of any billiard hall. */
+const RIVALS = ['Петрович', 'Михалыч', 'Палыч', 'Кузьмич'];
+const KOLKHOZ_SIZES = [3, 4, 5];
 
 /**
  * The «Игра» tab: a setup page, or the table when a game is on. The game in
@@ -32,9 +36,9 @@ export function gameScreen(scope) {
     closeTable();
     tableScope = scope.keep(new Scope());
     const level = game.level ? LEVELS[game.level] : null;
-    // the break alternates from game to game (п.14.1)
+    // the break alternates from game to game (п.14.1); in колхоз it goes round the table
     const { variant, penalty } = game.match;
-    const rematch = () => startGame(newGame(level, { variant, penalty, breaker: 1 - game.breaker }));
+    const rematch = () => startGame(newGame(level, { variant, penalty, breaker: game.match.next(game.breaker), kolkhoz: game.kolkhoz }));
     show(matchView(tableScope, game, { exit: openSetup, rematch }));
   };
   const saved = store.savedGame();
@@ -43,22 +47,29 @@ export function gameScreen(scope) {
   return root;
 }
 
-function newGame(level, { variant = store.setting('variant', VARIANT.free), penalty = store.setting('penalty', PENALTY.official), breaker = 0 } = {}) {
-  const players = level
+/** A new game: two players, or `kolkhoz` players (3–5) for колхоз. */
+function newGame(level, { variant = store.setting('variant', VARIANT.free), penalty = store.setting('penalty', PENALTY.official), breaker = 0, kolkhoz = 0 } = {}) {
+  const players = kolkhoz ? kolkhozPlayers(kolkhoz, level) : level
     ? [{ name: 'Ты', you: true }, { name: 'Компьютер', ai: level.id }]
     : [{ name: 'Игрок 1' }, { name: 'Игрок 2' }];
-  return { match: new Match({ players, variant, penalty, breaker }), level: level?.id ?? null, breaker, tally: freshTally() };
+  const match = new Match({ players, variant, penalty, breaker, kolkhoz: kolkhoz ? {} : null });
+  return { match, level: level?.id ?? null, breaker, kolkhoz, tally: freshTally() };
+}
+
+function kolkhozPlayers(n, level) {
+  if (!level) return Array.from({ length: n }, (_, i) => ({ name: `Игрок ${i + 1}` }));
+  return [{ name: 'Ты', you: true }, ...RIVALS.slice(0, n - 1).map((name) => ({ name, ai: level.id }))];
 }
 
 /** Per-game counters of the human player's play (balls scored come from the final score). */
 const freshTally = () => ({ svoyak: 0, hints: 0 });
 
 function restore(saved) {
-  return { match: Match.fromJSON(saved.match), level: saved.level, breaker: saved.breaker ?? 0, tally: saved.tally ?? freshTally() };
+  return { match: Match.fromJSON(saved.match), level: saved.level, breaker: saved.breaker ?? 0, kolkhoz: saved.kolkhoz ?? 0, tally: saved.tally ?? freshTally() };
 }
 
 const persist = (game) =>
-  store.saveGame({ match: game.match.toJSON(), level: game.level, breaker: game.breaker, tally: game.tally });
+  store.saveGame({ match: game.match.toJSON(), level: game.level, breaker: game.breaker, kolkhoz: game.kolkhoz, tally: game.tally });
 
 // ================================================================ setup
 
@@ -140,6 +151,12 @@ function setupView(scope, start) {
     describePenalty();
   });
 
+  let size = store.setting('kolkhozPlayers', 3);
+  const sizes = segmented(KOLKHOZ_SIZES.map((n) => ({ id: n, title: String(n), note: 'игрока' })), size, (n) => {
+    size = n;
+    store.setSetting('kolkhozPlayers', n);
+  });
+
   const resumable = saved && saved.match.winner < 0;
   return h('section.page',
     label('Игра'),
@@ -147,8 +164,10 @@ function setupView(scope, start) {
     variants,
     lead,
     resumable ? h('div.card.resume',
-      h('div', label(`Не закончена: ${VARIANT_NAMES[saved.match.variant ?? VARIANT.free]}`),
-        h('h3', `${saved.match.players[0].name} ${saved.match.scores[0]} : ${saved.match.scores[1]} ${saved.match.players[1].name}`)),
+      h('div', label(`Не закончена: ${saved.match.kolkhoz ? 'колхоз · ' : ''}${VARIANT_NAMES[saved.match.variant ?? VARIANT.free]}`),
+        h('h3', saved.match.kolkhoz
+          ? saved.match.players.map((p, i) => `${p.name} ${saved.match.scores[i]}`).join(' · ')
+          : `${saved.match.players[0].name} ${saved.match.scores[0]} : ${saved.match.scores[1]} ${saved.match.players[1].name}`)),
       h('button.btn.primary', { onclick: () => start(restore(saved)) }, 'Продолжить')) : null,
     h('div.card',
       label('Против компьютера'),
@@ -159,6 +178,13 @@ function setupView(scope, start) {
       label('Вдвоём на одном телефоне'),
       h('p', 'Передавайте телефон друг другу после каждого промаха.'),
       h('button.btn.secondary.wide', { onclick: () => start(newGame(null, { variant, penalty })) }, 'Играть вдвоём')),
+    h('div.card',
+      label('Колхоз — втроём и больше'),
+      h('p', 'Каждый за себя, по кругу, пока не кончатся шары. Итог — разница в очках с тем, кто бьёт после тебя. Последний шар — за два, фол — минус очко.'),
+      sizes,
+      h('button.btn.primary.wide', { onclick: () => start(newGame(level, { variant, penalty, kolkhoz: size })) }, 'С компьютерами'),
+      h('button.btn.secondary.wide', { onclick: () => start(newGame(null, { variant, penalty, kolkhoz: size })) }, 'Все на одном телефоне'),
+      h('a.btn.secondary.wide', { href: '#/kolkhoz' }, 'Счёт для настоящего стола')),
     h('div.card',
       label('Штраф за фол'),
       penalties,
@@ -238,6 +264,16 @@ function matchView(scope, game, { exit, rematch }) {
 
   function renderScoreboard() {
     const active = match.pending ? match.pending.taker : match.cur; // after a foul the opponent is the one deciding
+    if (match.kolkhoz) {
+      // колхоз: points and the result against the next player, for everybody at the table
+      const nets = match.nets;
+      scoreboard.classList.add('many');
+      scoreboard.replaceChildren(...match.players.map((pl, p) => h(`div.player${active === p && !match.over ? '.active' : ''}`,
+        h('div.player-name', pl.name),
+        h('div.player-score', h('b', String(match.scores[p])), h(`span.${nets[p] > 0 ? 'ok' : nets[p] < 0 ? 'bad' : 'muted'}`, ` ${signed(nets[p])}`)))),
+      h('button.icon-btn', { 'aria-label': 'Меню партии', onclick: exit }, icon('more')));
+      return;
+    }
     scoreboard.replaceChildren(...[0, 1].map((p) => h(`div.player${active === p && !match.over ? '.active' : ''}`,
       h('div.player-name', match.players[p].name,
         match.players[p].ai && level ? h('small', ` · ${level.name}`) : null),
@@ -266,7 +302,8 @@ function matchView(scope, game, { exit, rematch }) {
         ? 'С руки из временного дома: все шары в доме — ставь биток за линией у дальнего борта.'
         : 'С руки из дома: перетащи биток в подсвеченной зоне и бей по шару вне дома.';
     } else if (match.combined) hand = 'Бей цветным шаром. Потяни кий справа вниз и отпусти.';
-    setStatus(level ? 'Твой удар' : `Ход: ${name}`, `${match.message} ${hand}`.trim());
+    if (match.kolkhoz && !match.isBreak) hand += ` Осталось ${plural(match.ballsLeft, ['шар', 'шара', 'шаров'])}.`;
+    setStatus(match.current.you ? 'Твой удар' : `Ход: ${name}`, `${match.message} ${hand}`.trim());
   }
 
   function selectBall(i) {
@@ -451,6 +488,7 @@ function matchView(scope, game, { exit, rematch }) {
   function finish() {
     renderScoreboard();
     lock(true);
+    if (match.kolkhoz) return finishKolkhoz();
     const won = match.winner === 0;
     const vsComputer = Boolean(level);
     // balls put back as foul penalties don't count: the final score is what the player kept
@@ -466,6 +504,33 @@ function matchView(scope, game, { exit, rematch }) {
       h('button.btn.secondary.wide', { onclick: exit }, 'В меню')));
     overlay.classList.remove('hidden');
     setStatus(title, match.message, won || !vsComputer ? 'ok' : 'bad');
+  }
+
+  /** Колхоз: the round's table — points and each player's result, best first. */
+  function finishKolkhoz() {
+    const you = match.players.findIndex((p) => p.you);
+    store.recordGame({ level: null, won: false, svoyak: game.tally.svoyak, potted: you >= 0 ? Math.max(0, match.scores[you]) : 0 });
+    store.saveGame(null);
+    const nets = match.nets;
+    const order = match.players.map((_, i) => i).sort((a, b) => nets[b] - nets[a] || a - b);
+    const best = match.players[match.winner];
+    const happy = best.you || you < 0;
+    const title = best.you ? 'Лучший итог!' : `${best.name} — лучший итог`;
+    const tone = (v) => (v > 0 ? 'ok' : v < 0 ? 'bad' : 'muted');
+    overlay.replaceChildren(h('div.sheet',
+      h('div.trophy', happy ? '🏆' : '🎱'),
+      h('h2', title),
+      h('div.k-table',
+        h('div.k-tr.k-th', h('span', 'Игрок'), h('span', 'Очки'), h('span', 'Итог')),
+        order.map((i) => h('div.k-tr',
+          h('span', match.players[i].name, i === match.lastBall ? ' ★' : ''),
+          h('span', String(match.scores[i])),
+          h(`span.${tone(nets[i])}`, signed(nets[i]))))),
+      h('p.muted.small', 'Итог — очки минус очки следующего игрока. ★ — последний шар, за два.'),
+      h('button.btn.primary.wide', { onclick: rematch }, 'Ещё партия'),
+      h('button.btn.secondary.wide', { onclick: exit }, 'В меню')));
+    overlay.classList.remove('hidden');
+    setStatus(title, match.message, happy ? 'ok' : 'bad');
   }
 
   hintBtn.addEventListener('click', hint);

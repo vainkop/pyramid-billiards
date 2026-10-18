@@ -58,6 +58,12 @@ export const store = {
     return s;
   },
 
+  /** «Колхоз» score sheet: the session in play, and the last players and settings for a new one. */
+  savedKolkhoz: () => read('kolkhoz', null),
+  saveKolkhoz: (session) => write('kolkhoz', session ?? undefined),
+  kolkhozSetup: () => read('kolkhoz:setup', null),
+  setKolkhozSetup: (setup) => write('kolkhoz:setup', setup),
+
   setting: (key, fallback) => read(`setting:${key}`, fallback),
   setSetting: (key, value) => write(`setting:${key}`, value),
 };
