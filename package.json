@@ -1,6 +1,6 @@
 {
   "name": "pyramid-billiards",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "Пирамида — школа русского бильярда и игра в «американку» и «сибирку» против компьютера или вдвоём, колхоз и таблица расчёта (PWA + Android)",
   "type": "module",
   "private": true,

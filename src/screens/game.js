@@ -301,7 +301,10 @@ function matchView(scope, game, { exit, rematch }) {
   const hapugaBtn = match.kolkhoz?.hapuga ? h('button.btn.secondary.small.hapuga-btn', { 'aria-label': 'Объявить хапугу' }, 'Хапуга') : null;
   let declaring = false;
   // the dock has room for one more button only if the coach's button shows just its bulb
-  if (hapugaBtn) hintBtn.lastChild.remove();
+  if (hapugaBtn) {
+    hintBtn.lastChild.remove();
+    hintBtn.classList.add('square');
+  }
   const scoreboard = h('div.scoreboard');
   const overlay = h('div.game-over.hidden');
   const decision = h('div.game-over.decision.hidden');
@@ -434,7 +437,10 @@ function matchView(scope, game, { exit, rematch }) {
     if (!hapugaBtn) return;
     hapugaBtn.disabled = isComputer() || match.isBreak || Boolean(match.pending) || match.over;
     hapugaBtn.classList.toggle('on', match.hapuga >= 0 || declaring);
-    hapugaBtn.textContent = match.hapuga >= 0 ? `Хапуга: ${match.hapuga || 'цв.'}` : 'Хапуга';
+    // named: just the ball, the red button already says it is the bet (the full label would not fit the dock)
+    const ball = match.hapuga > 0 ? `№${match.hapuga}` : 'цв.';
+    hapugaBtn.textContent = match.hapuga >= 0 ? ball : 'Хапуга';
+    hapugaBtn.setAttribute('aria-label', match.hapuga >= 0 ? `Хапуга: ${ball}, отменить` : 'Объявить хапугу');
   }
 
   function toggleHapuga() {
@@ -541,7 +547,7 @@ function matchView(scope, game, { exit, rematch }) {
       table.pickMode = false;
       table.invalidate();
       showHapuga();
-      setStatus(`Хапуга: шар ${match.hapuga || 'без номера'}`, 'Шар обведён красным. Забьёшь его этим ударом — он вдвойне. Нажми «Хапуга» ещё раз, чтобы передумать.', 'ok');
+      setStatus(`Хапуга: шар ${match.hapuga || 'без номера'}`, 'Шар обведён красным. Забьёшь его этим ударом — он вдвойне. Нажми красную кнопку ещё раз, чтобы передумать.', 'ok');
       return;
     }
     const p = match.pending;
