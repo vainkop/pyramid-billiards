@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Physics } from '../src/physics.js';
+import { Physics, TICK } from '../src/physics.js';
 import { predictStrikerPath } from '../src/predict.js';
 import { potCandidates, allowForThrow } from '../src/ai.js';
 
@@ -22,6 +22,32 @@ test('the deflection line recognises a cut свояк and runs into the pocket',
   sim.shoot(aim, c.power, 0, c.spins[0].oy, 0);
   sim.runToRest();
   assert.equal(path.pocket, sim.pocketOf[0], 'the same pocket as the real shot');
+});
+
+test('the object ball is played out to the end: dropping, rattling in the jaws or blocked', () => {
+  // ball 1 straight in front of the top-left corner pocket, the cue ball behind it on the same line
+  const t = new Physics(3);
+  t.place(0, 0.4, 0.4);
+  t.place(1, 0.2, 0.2);
+  const aim = Math.atan2(-1, -1);
+  const shot = { power: 0.3 };
+  const drops = predictStrikerPath(t, aim, shot);
+  assert.equal(drops.object, 1);
+  assert.equal(drops.objectPocket, 0);
+  assert.equal(predictStrikerPath(t, aim, { power: 0.03 }).objectPocket, -1, 'too soft: stops short');
+  t.place(2, 0.1, 0.1); // a ball in the way
+  assert.equal(predictStrikerPath(t, aim, shot).objectPocket, -1, 'blocked');
+});
+
+test('the prediction is the real shot played in TICKs, to the last bit', () => {
+  const t = position();
+  const aim = Math.atan2(t.y[1] - t.y[0], t.x[1] - t.x[0]) + 0.03;
+  const shot = { power: 0.5, ox: 0.4, oy: -0.5 };
+  const path = predictStrikerPath(t, aim, shot);
+  const sim = t.copy();
+  sim.shoot(aim, shot.power, shot.ox, shot.oy, 0);
+  sim.runToRest(30, TICK);
+  assert.equal(path.objectPocket, sim.on[path.object] ? -1 : sim.pocketOf[path.object]);
 });
 
 test('an ordinary deflection is only shown for its first stretch', () => {

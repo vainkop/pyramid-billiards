@@ -45,6 +45,12 @@ export const V_JUMP = 4.35;
 /** Balls this far from every cushion cannot touch one: skip the geometry test. */
 const NEAR_CUSHION = 0.1;
 const FRAME = 1 / 60;
+/**
+ * The step a shot on screen is played in, whatever the display's frame rate, and
+ * the step the aiming lines are predicted in: the same steps from the same table
+ * give the same result to the last bit, so what the lines show is what happens.
+ */
+export const TICK = 1 / 240;
 
 export class Physics {
   constructor(n) {
@@ -147,9 +153,9 @@ export class Physics {
     return false;
   }
 
-  /** Runs the current shot to completion (at most maxSeconds of table time). */
-  runToRest(maxSeconds = 30) {
-    for (let t = 0; t < maxSeconds && this.moving(); t += FRAME) this.step(FRAME);
+  /** Runs the current shot to completion (at most maxSeconds of table time) in steps of `dt`. */
+  runToRest(maxSeconds = 30, dt = FRAME) {
+    for (let t = 0; t < maxSeconds && this.moving(); t += dt) this.step(dt);
     return this;
   }
 

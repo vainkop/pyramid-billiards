@@ -113,10 +113,15 @@ export class Match {
     return this.combined ? objects : Math.max(0, on - 1);
   }
 
-  /** Колхоз, «хапуга»: may table slot i be named for the next shot? (In сибирка not the cue ball.) */
+  /** Колхоз, «хапуга»: may table slot i be named for the next shot? Any ball, the striker too (for a свояк). */
   canDeclare(i) {
     return Boolean(this.kolkhoz?.hapuga) && !this.isBreak && !this.pending && !this.over
-      && i >= 0 && i < BALLS && this.table.on[i] && !(this.combined && this.labels[i] === 0);
+      && i >= 0 && i < BALLS && this.table.on[i];
+  }
+
+  /** «шар 7»; the ball without a number is the coloured one in сибирка. */
+  ballName(label) {
+    return label ? `шар ${label}` : this.combined ? 'цветной шар' : 'шар без номера';
   }
 
   /** Names table slot i as «хапуга» for the next shot; naming it again takes the bet back. */
@@ -281,7 +286,7 @@ export class Match {
     // «хапуга»: the named ball counts double, or the bet is paid; a foul is fined twice below
     let bet = '';
     if (hapuga >= 0 && !foul) {
-      const name = hapuga ? `шар ${hapuga}` : 'шар без номера';
+      const name = this.ballName(hapuga);
       if (this.hapugaHit) {
         this.scores[me] += 1;
         bet = `Хапуга! ${cap(name)} — вдвойне. `;
@@ -314,7 +319,8 @@ export class Match {
       }
       this.score(me, labels);
       if (this.over) return;
-      this.message = `${bet}${cap(kinds)}: +${labels.length}. ${say(this.players[me], 'бьёт', 'бьёшь')} ещё.`;
+      // the хапуга's extra point is in the total, so the message adds up with the score
+      this.message = `${bet}${cap(kinds)}: +${labels.length + (this.hapugaHit ? 1 : 0)}. ${say(this.players[me], 'бьёт', 'бьёшь')} ещё.`;
       this.ensureStriker();
       return;
     }

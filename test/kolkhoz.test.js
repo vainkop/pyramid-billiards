@@ -243,7 +243,20 @@ test('хапуга on the table: a named ball potted counts double', () => {
   finish(m, { firstHit: 1, potted: [1] });
   assert.deepEqual(m.scores, [2, 0, 0]);
   assert.equal(m.hapuga, -1, 'the bet is for one shot');
-  assert.match(m.message, /Хапуга! Шар 1 — вдвойне/);
+  assert.match(m.message, /Хапуга! Шар 1 — вдвойне\. Чужой: \+2\./, 'the message adds up with the score');
+});
+
+test('хапуга on your own ball: a свояк named in advance counts double, in сибирка too', () => {
+  const free = hapugaTable();
+  assert.ok(free.declareHapuga(0));
+  finish(free, { firstHit: 1, potted: [0] });
+  assert.deepEqual(free.scores, [2, 0, 0]);
+  const sib = hapugaTable({ variant: VARIANT.combined });
+  assert.ok(sib.declareHapuga(0), 'the coloured ball can be named');
+  finish(sib, { firstHit: 1, potted: [0] });
+  assert.match(sib.message, /Хапуга! Цветной шар — вдвойне/);
+  assert.ok(sib.takeForSvoyak(2));
+  assert.deepEqual(sib.scores, [2, 0, 0], 'the ball taken for the свояк plus the хапуга point');
 });
 
 test('хапуга on the table: another ball potted or a miss costs the bet, a foul twice', () => {
@@ -262,12 +275,11 @@ test('хапуга on the table: another ball potted or a miss costs the bet, a 
   assert.match(m.message, /штраф вдвойне/);
 });
 
-test('хапуга: only when agreed, never on the break, never the coloured ball in сибирка; naming again takes it back', () => {
+test('хапуга: only when agreed, never on the break; naming again takes it back', () => {
   assert.equal(position(spread(4)).declareHapuga(1), false);
   const fresh = new Match({ players: three, kolkhoz: { hapuga: true } });
   assert.equal(fresh.declareHapuga(1), false, 'break');
   const sib = hapugaTable({ variant: VARIANT.combined });
-  assert.equal(sib.declareHapuga(0), false);
   assert.ok(sib.declareHapuga(2));
   assert.ok(sib.declareHapuga(2));
   assert.equal(sib.hapuga, -1);

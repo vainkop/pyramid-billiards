@@ -1,5 +1,5 @@
-import { W, H, R, POCKETS } from './physics.js';
-import { SEGMENTS, E_CUSHION, CORNER, pocketAhead } from './table.js';
+import { W, H, R, POCKETS, TICK } from './physics.js';
+import { SEGMENTS, E_CUSHION, CORNER } from './table.js';
 import { predictStrikerPath } from './predict.js';
 import { SVOYAK, MASSE } from './drills.js';
 import { MISCUE_LIMIT } from './content.js';
@@ -21,6 +21,13 @@ const FLIGHT_MS = 700;
 const DRAG_SLOP = 8; // px of movement that turns a press into an aim drag
 /** Closer to the cue ball than this (table units), dragging turns the aim proportionally slower. */
 const FINE_AIM_RADIUS = 0.5;
+/**
+ * A finger leaving the glass rolls a little and drags the aim with it: on release
+ * the aim goes back to where it was this long before, if it moved less than
+ * LIFT_TURN since — a deliberate turn is larger.
+ */
+const LIFT_MS = 100;
+const LIFT_TURN = 0.05;
 
 /**
  * Canvas view of a Russian pyramid table. Animates shots and shows aiming aids:
@@ -120,6 +127,7 @@ export class TableView {
     this.fx = []; // balls flying off the table during this shot
     this.animating = true;
     this.last = null; // the first animation frame sets the clock
+    this.lag = 0; // table time owed to the shot, played in whole TICKs
     return true;
   }
 
@@ -200,8 +208,12 @@ export class TableView {
       // rAF timestamps are frame start times and may predate the shot itself
       const dt = this.last === null ? 0 : Math.min(0.033, Math.max(0, (now - this.last) / 1000));
       this.last = now;
-      if (this.skip) this.phys.runToRest();
-      else this.phys.step(dt * PLAYBACK);
+      // fixed steps, as the aiming lines were predicted, whatever the frame rate
+      if (this.skip) this.phys.runToRest(30, TICK);
+      else {
+        this.lag += dt * PLAYBACK;
+        for (; this.lag >= TICK && this.phys.moving(); this.lag -= TICK) this.phys.step(TICK);
+      }
       this.skip = false;
       // a ball that flew off is shown leaving the table before the shot counts as over
       while (this.fx.length < this.phys.flights.length) this.fx.push({ ...this.phys.flights[this.fx.length], t0: now });
@@ -572,8 +584,10 @@ export class TableView {
       let ny = (p.y[hit] - gy) / nl;
       if (path.object === hit) [nx, ny] = [Math.cos(path.objectDir), Math.sin(path.objectDir)];
       const len = 0.08 + 0.35 * Math.max(0, dx * nx + dy * ny);
-      // green when the object ball is heading cleanly into a pocket's mouth
-      const k = pocketAhead(p.x[hit], p.y[hit], nx, ny);
+      // green when the object ball really drops: the shot played out to the end, jaws and
+      // other balls included — not when the cue may slip off the ball (a miscue is chance)
+      const sure = Math.hypot(this.params.ox, this.params.oy) <= MISCUE_LIMIT;
+      const k = sure && path.object === hit ? path.objectPocket : -1;
       ctx.strokeStyle = k >= 0 ? '#5fd38a' : '#d9b36c';
       if (k >= 0) {
         const [J1, J2] = POCKETS[k].jaws;
@@ -709,7 +723,7 @@ export class TableView {
       canvas.setPointerCapture(e.pointerId);
       this.dragAngle = null;
       const [tx, ty] = toTable(e);
-      this.press = { x: e.clientX, y: e.clientY, moved: false };
+      this.press = { x: e.clientX, y: e.clientY, moved: false, aims: [] };
       if (this.mode === GAME) return this.gamePress(tx, ty);
       this.drag = this.mode === TRAINER ? this.ballAt(tx, ty) : -1;
       if (this.drag < 0) this.aimAt(tx, ty);
@@ -722,10 +736,24 @@ export class TableView {
         clearTimeout(this.longPress);
       }
       if (this.drag >= 0) this.moveBall(this.drag, tx, ty);
-      else if (this.mode !== GAME || this.press?.moved) this.aimDrag(tx, ty);
+      else if (this.mode !== GAME || this.press?.moved) {
+        this.aimDrag(tx, ty);
+        this.press?.aims.push(e.timeStamp, this.aim);
+      }
     });
-    const end = () => {
+    const end = (e) => {
       clearTimeout(this.longPress);
+      const aims = this.press?.aims ?? [];
+      // undo the roll of the lifting finger: the aim as it was LIFT_MS before release
+      let k = aims.length - 2;
+      while (k >= 0 && aims[k] > e.timeStamp - LIFT_MS) k -= 2;
+      if (k >= 0 && k < aims.length - 2 && this.drag < 0) {
+        const held = aims[k + 1];
+        if (Math.abs(Math.atan2(Math.sin(this.aim - held), Math.cos(this.aim - held))) < LIFT_TURN) {
+          this.aim = held;
+          this.invalidate();
+        }
+      }
       this.drag = -1;
       this.press = null;
     };

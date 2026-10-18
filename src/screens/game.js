@@ -547,7 +547,7 @@ function matchView(scope, game, { exit, rematch }) {
       table.pickMode = false;
       table.invalidate();
       showHapuga();
-      setStatus(`Хапуга: шар ${match.hapuga || 'без номера'}`, 'Шар обведён красным. Забьёшь его этим ударом — он вдвойне. Нажми красную кнопку ещё раз, чтобы передумать.', 'ok');
+      setStatus(`Хапуга: ${match.ballName(match.hapuga)}`, 'Шар обведён красным. Забьёшь его этим ударом — он вдвойне. Нажми красную кнопку ещё раз, чтобы передумать.', 'ok');
       return;
     }
     const p = match.pending;
@@ -602,7 +602,7 @@ function matchView(scope, game, { exit, rematch }) {
         const t = technique(ai.plan.ox, ai.plan.oy, ai.plan.elev);
         const named = ai.plan.hapuga >= 0 && match.declareHapuga(match.labels.indexOf(ai.plan.hapuga));
         setStatus(`${match.current.name}: шар ${match.strikerLabel || 'без номера'}`,
-          `${named ? `Хапуга на шар ${ai.plan.hapuga || 'без номера'}! ` : ''}${cap(ai.plan.kind)} — ${t.name.toLowerCase()}, сила ${Math.round(ai.plan.power * 100)}%.`);
+          `${named ? `Хапуга: ${match.ballName(ai.plan.hapuga)}! ` : ''}${cap(ai.plan.kind)} — ${t.name.toLowerCase()}, сила ${Math.round(ai.plan.power * 100)}%.`);
         break;
       }
       return;

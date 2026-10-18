@@ -1,10 +1,12 @@
-import { POCKETS } from './physics.js';
+import { POCKETS, TICK } from './physics.js';
 
 /** How much of an ordinary path after the contact is shown (table units). */
 const SHOWN = 0.45;
-/** Fine steps, so the line follows the finger smoothly instead of in frame-sized jumps. */
-const DT = 1 / 240;
+/** The very steps the shot is played in on screen, so the prediction is exact. */
+const DT = TICK;
 const MAX_STEPS = 6 * 240;
+/** How long the object ball is followed to see whether it drops. */
+const OBJECT_STEPS = 15 * 240;
 /** A ball heading into a pocket usually brushes a jaw first: look this far past the first touch. */
 const LOOK_PAST = 0.5 * 240;
 
@@ -17,6 +19,8 @@ const LOOK_PAST = 0.5 * 240;
  *            pocket when it drops (a свояк, then `pocket` ≥ 0)
  *   object   the ball it meets first (or -1), and `objectDir`, the direction
  *            that ball leaves in — off the line of centres by the throw
+ *   objectPocket  the pocket that ball ends up in, or -1: the shot is played
+ *            out until it drops or stops, jaws, other balls and pace included
  *
  * Everything comes from the same physics as the real shot, spin, power and
  * throw included.
@@ -24,12 +28,19 @@ const LOOK_PAST = 0.5 * 240;
 export function predictStrikerPath(phys, aim, { power, ox = 0, oy = 0, elev = 0 }) {
   const p = phys.copy();
   p.shoot(aim, Math.max(0.03, power), ox, oy, elev);
-  const result = { points: [], pocket: -1, object: -1, objectDir: 0 };
+  const result = { points: [], pocket: -1, object: -1, objectDir: 0, objectPocket: -1 };
   let step = 0;
   for (; step < MAX_STEPS && p.moving() && p.firstHit < 0 && p.on[0]; step++) p.step(DT);
   if (p.firstHit < 0) return result;
-  result.object = p.firstHit;
-  result.objectDir = Math.atan2(p.vy[p.firstHit], p.vx[p.firstHit]);
+  const object = p.firstHit;
+  result.object = object;
+  result.objectDir = Math.atan2(p.vy[object], p.vx[object]);
+  // once the striker's path is known, play on until the object ball drops or stops
+  const settle = () => {
+    const at = (b) => p.vx[b] || p.vy[b] || p.rx[b] || p.ry[b];
+    for (; step < OBJECT_STEPS && p.on[object] && at(object) && p.moving(); step++) p.step(DT);
+    result.objectPocket = p.on[object] ? -1 : p.pocketOf[object];
+  };
 
   const pts = [p.x[0], p.y[0]];
   let length = 0;
@@ -42,6 +53,7 @@ export function predictStrikerPath(phys, aim, { power, ox = 0, oy = 0, elev = 0 
       if (p.pocketOf[0] >= 0) {
         // a свояк is shown all the way into the pocket
         const M = POCKETS[p.pocketOf[0]].M;
+        settle();
         return { ...result, points: [...pts, M[0], M[1]], pocket: p.pocketOf[0] };
       }
       break; // flew off the table
@@ -68,6 +80,7 @@ export function predictStrikerPath(phys, aim, { power, ox = 0, oy = 0, elev = 0 
     if (touchedAt >= 0 && step - touchedAt > LOOK_PAST) break;
     if (cut !== -1 && touchedAt < 0 && length > SHOWN * 4) break; // long gone: no pocket near enough to matter
   }
+  settle();
   // not a свояк: only the first stretch
   if (cut === -1) return { ...result, points: pts };
   const shown = [];
