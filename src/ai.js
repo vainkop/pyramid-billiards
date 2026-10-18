@@ -52,6 +52,7 @@ export function* planShot(match, level = LEVELS.amateur, { random = Math.random,
   const ctx = shotContextFor(match);
   // judge the leave by what the next player may really strike (сибирка: only the coloured ball)
   ctx.leave = (sim) => nextShotValue(match, sim, random);
+  if (match.kolkhoz && level.spin) Object.assign(ctx, kolkhozTactics(match, random));
   let board = t;
   let place = null;
   if (ctx.fromHandZone) {
@@ -88,6 +89,11 @@ export function* planShot(match, level = LEVELS.amateur, { random = Math.random,
       // a novice takes the first shot that works
       if (!level.spin && value > 0) break outer;
     }
+  }
+  if (ctx.missCost) {
+    // колхоз: a risky pot is weighed against a safety that leaves the next player little
+    const safe = yield* kolkhozSafety(board, strikers, ctx, level);
+    if (safe && (!best || safe.value > best.value)) best = { ...safe, ...PLAIN[0] };
   }
   // only when no candidate pots a ball (played exactly) does the computer fall back to a safety
   if (!best) best = { ...safety(board, strikers, ctx), ...PLAIN[0] };
@@ -236,8 +242,59 @@ function playOut(t, c, spin, ctx = {}) {
   sim.shoot(c.aim, c.power, spin.ox, spin.oy, 0);
   sim.runToRest(20);
   if (shotFoul(sim, { fromHandZone: ctx.fromHandZone, startY })) return -100;
-  if (!sim.potted.length) return -1;
-  return sim.potted.length * 10 + (ctx.leave ? ctx.leave(sim) : bestLeave(sim)) * 20;
+  return shotValue(sim, ctx);
+}
+
+/** A legal shot's value: balls potted and the next shot; in колхоз a miss also costs what it hands over. */
+function shotValue(sim, ctx) {
+  if (!sim.potted.length) return ctx.missCost ? -1 - ctx.missCost(sim) : -1;
+  const bonus = ctx.lastBall ? 10 : 0; // the last ball counts double
+  return sim.potted.length * 10 + bonus + (ctx.leave ? ctx.leave(sim) : bestLeave(sim)) * 20;
+}
+
+/**
+ * Колхоз («кольцо»): every ball the next player pots is paid by this one, and
+ * what the players before score does not matter. So a miss costs what it leaves
+ * the next player, and the last ball — worth double — is worth a risk.
+ */
+function kolkhozTactics(match, random) {
+  return {
+    missCost: (sim) => 20 * nextShotValue(match, sim, random),
+    lastBall: match.ballsLeft === 1 && match.kolkhoz.lastDouble,
+  };
+}
+
+/**
+ * Колхоз safety: roll a ball gently into a near neighbour so the shot ends
+ * legally, and keep the one that leaves the next player the worst table.
+ * Tries about half as many shots as the level plans pots.
+ */
+function* kolkhozSafety(t, strikers, ctx, level) {
+  const pairs = [];
+  for (const s of strikers) {
+    for (let o = 0; o < t.n; o++) {
+      if (o === s || !t.on[o] || ctx.skip?.(o) || !t.pathClear(t.x[s], t.y[s], t.x[o], t.y[o], s, o)) continue;
+      pairs.push({ s, o, d: Math.hypot(t.x[o] - t.x[s], t.y[o] - t.y[s]) });
+    }
+  }
+  pairs.sort((a, b) => a.d - b.d);
+  let best = null;
+  let tries = Math.ceil(level.trials / 2);
+  outer: for (const { s, o } of pairs) {
+    const aim = Math.atan2(t.y[o] - t.y[s], t.x[o] - t.x[s]);
+    for (const power of [0.3, 0.45]) {
+      if (tries-- <= 0) break outer;
+      yield tries;
+      const sim = withStriker(t, s);
+      const startY = Float64Array.from(sim.y);
+      sim.shoot(aim, power, 0, -0.1, 0);
+      sim.runToRest(20);
+      if (shotFoul(sim, { fromHandZone: ctx.fromHandZone, startY })) continue;
+      const value = shotValue(sim, ctx);
+      if (!best || value > best.value) best = { striker: s, aim, power, kind: 'отыгрыш', value };
+    }
+  }
+  return best;
 }
 
 /** Best clean pot available to the next shot (from any ball, or only `strikers`). */

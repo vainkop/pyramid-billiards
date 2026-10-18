@@ -136,7 +136,7 @@ export function kolkhozScreen(scope) {
       error,
       h('button.btn.primary.wide', { type: 'button', onclick: start }, 'Начать счёт'),
       LESSON >= 0 ? h('a.btn.secondary.wide', { href: `#/lesson/${LESSON}` }, 'Правила колхоза') : null,
-      h('a.btn.secondary.wide', { href: '#/game' }, 'Сыграть колхоз на столе в приложении'),
+      h('a.btn.secondary.wide', { href: '#/game/kolkhoz' }, 'Сыграть колхоз на столе в приложении'),
     ];
   }
 

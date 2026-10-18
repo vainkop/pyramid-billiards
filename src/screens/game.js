@@ -7,7 +7,7 @@ import { technique, LESSONS } from '../content.js';
 import { signed } from '../kolkhoz.js';
 import { store } from '../store.js';
 import { h } from '../dom.js';
-import { Scope, label, icon, buzz, segmented, plural } from '../ui.js';
+import { Scope, label, icon, buzz, segmented, plural, backBar } from '../ui.js';
 
 const AIM_TIME = 0.9; // seconds the computer spends swinging the cue into line
 const DECIDE_TIME = 1100; // ms the computer "thinks" over a penalty ball or who plays next
@@ -19,8 +19,10 @@ const KOLKHOZ_SIZES = [3, 4, 5];
 /**
  * The «Игра» tab: a setup page, or the table when a game is on. The game in
  * progress is saved after every shot, so leaving the tab never loses it.
+ * `#/game/kolkhoz` opens the setup of колхоз instead of the game of two.
  */
-export function gameScreen(scope) {
+export function gameScreen(scope, arg) {
+  const kolkhozPage = arg === 'kolkhoz';
   const root = h('div.game-root');
   let tableScope = null; // owns the current table's loop; replaced for every game
   const show = (el) => root.replaceChildren(el);
@@ -30,7 +32,7 @@ export function gameScreen(scope) {
   };
   const openSetup = () => {
     closeTable();
-    show(setupView(scope, startGame));
+    show(kolkhozPage ? kolkhozSetupView(startGame) : setupView(scope, startGame));
   };
   const startGame = (game) => {
     closeTable();
@@ -42,30 +44,32 @@ export function gameScreen(scope) {
     show(matchView(tableScope, game, { exit: openSetup, rematch }));
   };
   const saved = store.savedGame();
-  if (saved && saved.match.winner < 0 && store.setting('resume', true)) startGame(restore(saved));
+  // the колхоз page always shows its setup first: the unfinished game is offered there
+  if (saved && saved.match.winner < 0 && store.setting('resume', true) && !kolkhozPage) startGame(restore(saved));
   else openSetup();
   return root;
 }
 
-/** A new game: two players, or `kolkhoz` players (3–5) for колхоз. */
-function newGame(level, { variant = store.setting('variant', VARIANT.free), penalty = store.setting('penalty', PENALTY.official), breaker = 0, kolkhoz = 0 } = {}) {
+/** A new game: two players, or колхоз { size, humans } — 3–5 players, the rest of them computers. */
+function newGame(level, { variant = store.setting('variant', VARIANT.free), penalty = store.setting('penalty', PENALTY.official), breaker = 0, kolkhoz = null } = {}) {
   const players = kolkhoz ? kolkhozPlayers(kolkhoz, level) : level
     ? [{ name: 'Ты', you: true }, { name: 'Компьютер', ai: level.id }]
     : [{ name: 'Игрок 1' }, { name: 'Игрок 2' }];
   const match = new Match({ players, variant, penalty, breaker, kolkhoz: kolkhoz ? {} : null });
-  return { match, level: level?.id ?? null, breaker, kolkhoz, tally: freshTally() };
+  return { match, level: kolkhoz && kolkhoz.humans >= kolkhoz.size ? null : level?.id ?? null, breaker, kolkhoz, tally: freshTally() };
 }
 
-function kolkhozPlayers(n, level) {
-  if (!level) return Array.from({ length: n }, (_, i) => ({ name: `Игрок ${i + 1}` }));
-  return [{ name: 'Ты', you: true }, ...RIVALS.slice(0, n - 1).map((name) => ({ name, ai: level.id }))];
+/** Колхоз seats: the people first («Ты» when alone), then the computers. */
+function kolkhozPlayers({ size, humans }, level) {
+  const people = humans === 1 ? [{ name: 'Ты', you: true }] : Array.from({ length: humans }, (_, i) => ({ name: `Игрок ${i + 1}` }));
+  return [...people, ...RIVALS.slice(0, size - humans).map((name) => ({ name, ai: level.id }))];
 }
 
 /** Per-game counters of the human player's play (balls scored come from the final score). */
 const freshTally = () => ({ svoyak: 0, hints: 0 });
 
 function restore(saved) {
-  return { match: Match.fromJSON(saved.match), level: saved.level, breaker: saved.breaker ?? 0, kolkhoz: saved.kolkhoz ?? 0, tally: saved.tally ?? freshTally() };
+  return { match: Match.fromJSON(saved.match), level: saved.level, breaker: saved.breaker ?? 0, kolkhoz: saved.kolkhoz ?? null, tally: saved.tally ?? freshTally() };
 }
 
 const persist = (game) =>
@@ -151,24 +155,13 @@ function setupView(scope, start) {
     describePenalty();
   });
 
-  let size = store.setting('kolkhozPlayers', 3);
-  const sizes = segmented(KOLKHOZ_SIZES.map((n) => ({ id: n, title: String(n), note: 'игрока' })), size, (n) => {
-    size = n;
-    store.setSetting('kolkhozPlayers', n);
-  });
-
   const resumable = saved && saved.match.winner < 0;
   return h('section.page',
     label('Игра'),
     title,
     variants,
     lead,
-    resumable ? h('div.card.resume',
-      h('div', label(`Не закончена: ${saved.match.kolkhoz ? 'колхоз · ' : ''}${VARIANT_NAMES[saved.match.variant ?? VARIANT.free]}`),
-        h('h3', saved.match.kolkhoz
-          ? saved.match.players.map((p, i) => `${p.name} ${saved.match.scores[i]}`).join(' · ')
-          : `${saved.match.players[0].name} ${saved.match.scores[0]} : ${saved.match.scores[1]} ${saved.match.players[1].name}`)),
-      h('button.btn.primary', { onclick: () => start(restore(saved)) }, 'Продолжить')) : null,
+    resumable ? resumeCard(saved, start) : null,
     h('div.card',
       label('Против компьютера'),
       levels,
@@ -180,10 +173,8 @@ function setupView(scope, start) {
       h('button.btn.secondary.wide', { onclick: () => start(newGame(null, { variant, penalty })) }, 'Играть вдвоём')),
     h('div.card',
       label('Колхоз — втроём и больше'),
-      h('p', 'Каждый за себя, по кругу, пока не кончатся шары. Итог — разница в очках с тем, кто бьёт после тебя. Последний шар — за два, фол — минус очко.'),
-      sizes,
-      h('button.btn.primary.wide', { onclick: () => start(newGame(level, { variant, penalty, kolkhoz: size })) }, 'С компьютерами'),
-      h('button.btn.secondary.wide', { onclick: () => start(newGame(null, { variant, penalty, kolkhoz: size })) }, 'Все на одном телефоне'),
+      h('p', 'От 3 до 5 игроков: люди и компьютеры в любом сочетании. Каждый за себя, по кругу, пока не кончатся шары.'),
+      h('a.btn.primary.wide', { href: '#/game/kolkhoz' }, 'Настроить колхоз'),
       h('a.btn.secondary.wide', { href: '#/kolkhoz' }, 'Счёт для настоящего стола')),
     h('div.card',
       label('Штраф за фол'),
@@ -199,6 +190,89 @@ function setupView(scope, start) {
         h('div.stat', h('b', String(stats.games)), h('span', 'партий')),
         h('div.stat', h('b', String(stats.potted)), h('span', 'шаров')),
         h('div.stat', h('b', String(stats.svoyak)), h('span', 'свояков')))) : null);
+}
+
+/** The unfinished game, any kind, with a button to go on with it. */
+function resumeCard(saved, start) {
+  const m = saved.match;
+  return h('div.card.resume',
+    h('div', label(`Не закончена: ${m.kolkhoz ? 'колхоз · ' : ''}${VARIANT_NAMES[m.variant ?? VARIANT.free]}`),
+      h('h3', m.kolkhoz
+        ? m.players.map((p, i) => `${p.name} ${m.scores[i]}`).join(' · ')
+        : `${m.players[0].name} ${m.scores[0]} : ${m.scores[1]} ${m.players[1].name}`)),
+    h('button.btn.primary', { onclick: () => start(restore(saved)) }, 'Продолжить'));
+}
+
+/** «Колхоз на столе»: the game, how many play, how many of them are people, how strong the computers are. */
+function kolkhozSetupView(start) {
+  const saved = store.savedGame();
+  let variant = store.setting('variant', VARIANT.free);
+  let level = LEVELS[store.setting('level', 'amateur')] ?? LEVELS.amateur;
+  let size = store.setting('kolkhozPlayers', 3);
+  let humans = Math.min(size, store.setting('kolkhozHumans', 1));
+
+  const who = h('p.muted.small');
+  const humansBox = h('div');
+  const computerCard = h('div.card',
+    label('Компьютеры'),
+    segmented(LEVEL_ORDER.map((l) => ({ id: l.id, title: l.name, note: levelBlurb(l) })), level.id, (id) => {
+      level = LEVELS[id];
+      store.setSetting('level', id);
+    }),
+    h('p.muted.small', 'В колхозе любитель и мастер играют по-колхозному: их шары оплачивает предыдущий игрок, а за промах платит следующий — он получает стол. Поэтому они взвешивают каждый рискованный шар против отыгрыша, который оставит следующему меньше всего, и смелее бьют последний шар — он за два. Новичок просто бьёт первый удобный шар.'));
+  const describe = () => {
+    const bots = size - humans;
+    const people = humans === 1 ? 'Ты' : `${humans} ${humans < 5 ? 'человека' : 'человек'} на одном телефоне`;
+    who.textContent = bots ? `${people} и ${plural(bots, ['компьютер', 'компьютера', 'компьютеров'])}: ${RIVALS.slice(0, bots).join(', ')}.` : `${people}, без компьютеров.`;
+    computerCard.classList.toggle('hidden', !bots);
+  };
+  const showHumans = () => {
+    humansBox.replaceChildren(segmented(Array.from({ length: size }, (_, k) => ({
+      id: k + 1, title: String(k + 1), note: k + 1 === size ? 'все' : k ? 'людей' : 'ты',
+    })), humans, (n) => {
+      humans = n;
+      store.setSetting('kolkhozHumans', n);
+      describe();
+    }));
+    describe();
+  };
+  showHumans();
+
+  return h('section.page',
+    backBar('Колхоз на столе', 'game'),
+    h('h1', 'Колхоз на столе'),
+    h('p.lead', 'Каждый за себя, по кругу, пока не кончатся шары. Итог — разница в очках с тем, кто бьёт после тебя.'),
+    saved && saved.match.winner < 0 ? resumeCard(saved, start) : null,
+    h('div.card',
+      label('Игра'),
+      segmented(Object.values(VARIANT).map((v) => ({ id: v, title: VARIANT_NAMES[v], note: v === VARIANT.free ? 'любым по любому' : 'только цветным' })), variant, (v) => {
+        variant = v;
+        store.setSetting('variant', v);
+      })),
+    h('div.card',
+      label('Сколько игроков'),
+      segmented(KOLKHOZ_SIZES.map((n) => ({ id: n, title: String(n), note: n < 5 ? 'игрока' : 'игроков' })), size, (n) => {
+        size = n;
+        humans = Math.min(humans, n);
+        store.setSetting('kolkhozPlayers', n);
+        showHumans();
+      }),
+      label('Из них людей'),
+      humansBox,
+      who),
+    computerCard,
+    h('div.card',
+      label('Правила коротко'),
+      h('ul.rules-list', [
+        'Порядок ударов постоянный; в следующей партии разбивает следующий игрок.',
+        'Забил — бьёшь ещё, промахнулся — бьёт следующий.',
+        'Партия идёт, пока не кончатся шары; последний шар — за два.',
+        'Фол — минус очко нарушителю, удар переходит к следующему.',
+        'Итог — твои очки минус очки следующего игрока: твои шары оплачивает тот, кто бьёт перед тобой.',
+      ].map((r) => h('li', r))),
+      h('a.btn.secondary.wide', { href: `#/lesson/${LESSONS.findIndex((l) => l.title.startsWith('Колхоз'))}` }, 'Урок о колхозе')),
+    h('button.btn.primary.wide', { onclick: () => start(newGame(level, { variant, kolkhoz: { size, humans } })) }, 'Начать колхоз'),
+    h('a.btn.secondary.wide', { href: '#/kolkhoz' }, 'Счёт для настоящего стола'));
 }
 
 function levelBlurb(l) {

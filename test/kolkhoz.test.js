@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { nets, transfers, KolkhozSession, SETTLE, rub, MIN_PLAYERS } from '../src/kolkhoz.js';
 import { Match, VARIANT } from '../src/pyramid.js';
-import { planShotNow, LEVELS } from '../src/ai.js';
+import { planShotNow, LEVELS, chooseSvoyakBall } from '../src/ai.js';
 import { W, H } from '../src/physics.js';
 import { seeded } from './helpers.js';
 
@@ -190,4 +190,29 @@ test('колхоз survives saving, and the computer can plan in it', () => {
   assert.equal(copy.name, 'Колхоз · американка');
   const plan = planShotNow(copy, LEVELS.novice, { random: seeded(4) });
   assert.equal(plan.kind, 'разбой');
+});
+
+test('колхоз: computers with колхоз tactics play a whole round to the end', () => {
+  const random = seeded(11);
+  const players = [0, 1, 2].map((i) => ({ name: `P${i}`, ai: 'amateur' }));
+  const m = new Match({ players, kolkhoz: {}, random });
+  const kinds = new Set();
+  let shots = 0;
+  while (!m.over && shots < 300) {
+    if (m.pending) {
+      m.takeForSvoyak(chooseSvoyakBall(m));
+      continue;
+    }
+    const plan = planShotNow(m, LEVELS.amateur, { random });
+    kinds.add(plan.kind);
+    if (plan.striker !== 0) m.selectStriker(plan.striker);
+    if (plan.place) m.table.place(0, plan.place.x, plan.place.y);
+    m.shoot(plan.aim, plan.power, plan.ox, plan.oy, plan.elev);
+    m.table.runToRest(30);
+    m.endShot();
+    shots++;
+  }
+  assert.ok(m.over, `round over after ${shots} shots`);
+  assert.equal(sum(m.nets), 0);
+  assert.ok(kinds.has('отыгрыш'), 'a risky pot is sometimes passed up for a safety against the next player');
 });

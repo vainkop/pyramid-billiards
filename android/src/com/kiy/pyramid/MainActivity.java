@@ -145,7 +145,7 @@ public class MainActivity extends Activity {
         String js = "(async () => {"
                 + " const log = []; const errors = [];"
                 // the player's progress, settings and game in progress are put back afterwards
-                + " const backup = Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)]));"
+                + " const backup = Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)])); try {"
                 + " addEventListener('error', e => errors.push(String(e.message)));"
                 + " addEventListener('unhandledrejection', e => errors.push('promise: ' + e.reason));"
                 + " const sleep = ms => new Promise(r => setTimeout(r, ms));"
@@ -168,8 +168,9 @@ public class MainActivity extends Activity {
                 + " log.push('сибирка after break: ' + document.querySelector('.status')?.textContent + ' | ' + document.querySelector('.status-detail')?.textContent);"
                 // колхоз on the table: three players, the computers play in turn
                 + " localStorage.removeItem('pyramid:game'); localStorage.setItem('pyramid:setting:variant', JSON.stringify('free'));"
-                + " location.hash = '#/lessons'; await sleep(300); location.hash = '#/game'; await sleep(500);"
-                + " [...document.querySelectorAll('button')].find(b => b.textContent.includes('С компьютерами'))?.click(); await sleep(500);"
+                + " location.hash = '#/lessons'; await sleep(300); location.hash = '#/game/kolkhoz'; await sleep(500);"
+                + " log.push('колхоз setup: ' + document.querySelector('h1')?.textContent + ' | ' + document.querySelector('.page p.muted.small')?.textContent);"
+                + " [...document.querySelectorAll('button')].find(b => b.textContent.includes('Начать колхоз'))?.click(); await sleep(500);"
                 + " document.querySelector('.cue-strip')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await sleep(6000);"
                 + " log.push('колхоз: ' + document.querySelectorAll('.scoreboard .player').length + ' игрока | ' + [...document.querySelectorAll('.scoreboard .player')].map(e => e.textContent).join(' / ') + ' | ' + document.querySelector('.status')?.textContent + ' | ' + document.querySelector('.status-detail')?.textContent);"
                 + " await sleep(15000);"
@@ -180,6 +181,7 @@ public class MainActivity extends Activity {
                 + " [...document.querySelectorAll('button')].find(b => b.textContent.includes('Начать счёт'))?.click(); await sleep(400);"
                 + " for (let k = 0; k < 15; k++) { document.querySelectorAll('.k-row')[k % 3]?.querySelector('.k-pot')?.click(); await sleep(120); }"
                 + " log.push('счёт: ' + [...document.querySelectorAll('.k-pts b')].map(b => b.textContent).join(',') + ' | ' + [...document.querySelectorAll('.k-pay li')].map(l => l.textContent).join('; ') + ' | nav: ' + [...document.querySelectorAll('#nav a')].map(a => a.textContent).join(','));"
+                + " } catch (e) { errors.push('selftest: ' + e); }"
                 + " log.push(errors.length ? 'ERRORS: ' + errors.join(' || ') : 'NO ERRORS');"
                 + " localStorage.clear(); for (const [k, v] of Object.entries(backup)) localStorage.setItem(k, v);"
                 + " log.push('state restored: ' + Object.keys(backup).length + ' keys'); location.hash = '#/lessons';"
