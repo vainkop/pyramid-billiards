@@ -8,6 +8,13 @@
 **Открыть:** https://vainkop.github.io/pyramid-billiards/ · на iPhone: Safari →
 «Поделиться» → «На экран „Домой“» (работает без интернета). Android — APK, см. ниже.
 
+**В Telegram** — то же приложение как Mini App (бот: Main Mini App и кнопка меню «Играть» с адресом
+GitHub Pages, режим full screen). Скрипт Telegram (`telegram-web-app.js`) подключается, только когда
+страницу открыл Telegram (`src/telegram.js`): отступы под вырез экрана и кнопки Telegram (safe area +
+content safe area), свайп вниз не закрывает приложение (кий тянут вниз), кнопка «Назад» Telegram, его
+вибрация, ссылки через Telegram, ориентация — портрет, копия прогресса в `DeviceStorage` (если WebView
+очистит localStorage). В браузере и в APK ничего не меняется.
+
 ## Что внутри
 
 - **Уроки** — 15 тем с живой демонстрацией удара, пошаговой техникой, частыми

@@ -3,6 +3,7 @@ import { ICONS } from './icons.js';
 import { SpinPad } from './spin-pad.js';
 import { stars } from './drills.js';
 import { store } from './store.js';
+import { haptic } from './telegram.js';
 
 /** Owns a screen's live components (canvases, timers, loops) and tears them down on navigation. */
 export class Scope {
@@ -70,9 +71,9 @@ export function progressBar(value, max) {
   return h('div.progress', h('div', { style: { width: `${(100 * value) / Math.max(1, max)}%` } }));
 }
 
-/** Short haptic tick where supported (Android); silently ignored elsewhere. */
+/** Short haptic tick: Telegram's inside Telegram (iPhone too), else where supported (Android); silently ignored elsewhere. */
 export function buzz(ms = 12) {
-  navigator.vibrate?.(ms);
+  if (!haptic(ms)) navigator.vibrate?.(ms);
 }
 
 /**

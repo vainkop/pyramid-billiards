@@ -5,6 +5,7 @@ import { quizScreen } from './screens/quiz.js';
 import { kolkhozScreen } from './screens/kolkhoz.js';
 import { Scope, icon } from './ui.js';
 import { h } from './dom.js';
+import { initTelegram, telegramReady } from './telegram.js';
 
 const view = document.getElementById('view');
 const nav = document.getElementById('nav');
@@ -44,8 +45,10 @@ function render() {
 }
 
 nav.replaceChildren(...TABS.map((t) => h('a', { href: `#/${t.route}`, 'data-route': t.route }, icon(t.icon), t.label)));
+initTelegram(view);
 window.addEventListener('hashchange', render);
 render();
+telegramReady();
 
 // Offline support on the web; the Android app serves the files itself.
 if ('serviceWorker' in navigator && location.hostname.endsWith('github.io')) {

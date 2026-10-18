@@ -1,5 +1,5 @@
 /** Progress, settings and the game in progress, kept in localStorage (guarded: it may be unavailable). */
-const PREFIX = 'pyramid:';
+export const PREFIX = 'pyramid:';
 
 function read(key, fallback) {
   try {
@@ -14,6 +14,8 @@ function write(key, value) {
   try {
     if (value === undefined) localStorage.removeItem(PREFIX + key);
     else localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    // inside Telegram, telegram.js keeps a copy in Telegram's own storage
+    window.dispatchEvent(new Event('pyramid:stored'));
   } catch {
     /* progress just won't persist */
   }
